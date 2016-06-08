@@ -18,18 +18,20 @@ task get_bam_basename {
 task bbAlleleCount {
   File bamFile
   String bamName
-  File bbChrRefFile
+  String refBase
   String outputDir
 
-  command {
-    execute_with_sample ${bamFile} alleleCounter \
-    -l ${bbChrRefFile} \ 
-    -o ${outputDir + "/" + bamName + "." + chr ".tsv"} \
-    -b ${bamFile}
-  }
+  command <<<
+    for chr in {1..23}; do
+      execute_with_sample ${bamFile} alleleCounter \
+      -l ${refBase + "/battenberg/1000genomesloci/1000genomesloci2012_chr" + chr + ".txt"} \ 
+      -o ${outputDir + "/" + bamName + "." + chr ".tsv"} \
+      -b ${bamFile};
+    done
+  >>>
 
   output {
-    File alleleCounts = ${outputDir + "/" + bamName + "." + chr ".tsv"}
+    Array[File] alleleCounts = glob("${outputDir}/${bamName}.*.tsv")
   }
 
   runtime {
@@ -358,5 +360,186 @@ task brass {
 
 
 workflow sanger-cgp-somatic-vc {
+  Array[Int] cavemandSplitIndices = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86]
+
+  ##
+  ## QC/Prep steps
+  ##
+  call compareGenotype {
+    inputs:
+  }
+
+  call analyzeContamination as control_contam {
+    inputs:
+  }
+
+  call analyzeContamination as tumor_contam {
+    inputs:
+  }
+  
+  call bam_stats as control_bam_stats {
+    inputs:
+  }
+
+  scatter(tbam in tumorBams) {
+    call bam_stats {
+      inputs:
+    }
+    
+    call bbAlleleCount {
+      inputs:
+    }
+  }
+
+  call bbAlleleMerge {
+   inputs:
+  }
+
+
+  ##
+  ## ASCAT - copynumber analysis
+  ##
+  # scatter ?
+  call ascat as ascat_allele_count {
+    inputs: process=allele_count,
+  }
+  
+   call ascat {
+    inputs: process=ascat,
+  }
+
+  call ascat as ascat_finalise {
+    inputs: process=finalise,
+  }
+
+
+  ##
+  ## Pindel - InDel calling
+  ##
+  call pindel as pindel_input1 {
+    inputs: process=input, 
+            index=1,
+  }
+
+  call pindel as pindel_input2 {
+    inputs: process=input, 
+            index=2,
+  }
+
+  call pindel {
+    inputs: process=pindel, 
+  }
+
+  # scatter?
+  call pindel as pindel_pin2vcf {
+    inputs: process=pin2vcf, 
+  }
+
+  call pindel as pindel_merge {
+    inputs: process=merge, 
+  }
+
+  call pindel as pindel_flag {
+    inputs: process=flag, 
+  }
+
+
+  ##
+  ## BRASS - breakpoint analysis
+  ##
+  call brass as brass_input1 {
+    inputs: process=input, 
+  }
+
+  call brass as brass_input2 {
+    inputs: process=input, 
+            index=2,
+  }
+
+  call brass as brass_cover {
+    inputs: process=cover, 
+  }
+
+  call brass as brass_merge {
+    inputs: process=merge, 
+  }
+
+  call brass as brass_group {
+    inputs: process=group, 
+  }
+
+  call brass as brass_isize {
+    inputs: process=isize, 
+  }
+
+  call brass as brass_normcn {
+    inputs: process=normcn, 
+  }
+
+  call brass as brass_filter {
+    inputs: process=filter, 
+  }
+
+  call brass as brass_split {
+    inputs: process=split, 
+  }
+
+  call brass as brass_assemble {
+    inputs: process=split, 
+  }
+
+  call brass as brass_grass {
+    inputs: process=grass, 
+  }
+
+  call brass as brass_tabix {
+    inputs: process=tabix, 
+  }
+
+  ##
+  ## Caveman - SNV analysis
+  ##
+  call caveCnPrep as control_caveCnPrep {
+    inputs: type=control,
+  }
+
+  call caveCnPrep as tumor_caveCnPrep {
+    inputs: type=tumor, 
+  }
+
+  scatter(i in caveManSplitIndices) {
+    call caveman as caveman_split {
+      inputs: process=split, 
+              index=i,
+    }
+  }
+
+  call caveman as caveman_split_concat {
+    inputs: process=split_concat, 
+  }
+
+  call caveman as caveman_mstep {
+    inputs: process=mstep, 
+  }
+
+  call caveman as caveman_merge {
+    inputs: process=merge, 
+  }
+
+  call caveman as caveman_estep {
+    inputs: process=estep, 
+  }
+
+  call caveman as caveman_merge_results {
+    inputs: process=merge_results, 
+  }
+
+  call caveman as caveman_add_ids {
+    inputs: process=add_ids, 
+  }
+
+  call caveman as caveman_flag {
+    inputs: process=flag, 
+  }
 
 }
