@@ -116,17 +116,24 @@ task compareGenotype {
   }
 }
 
+# TODO
 task analyzeContamination {
   File bamFile
   String bamName
   String outputDir
+  # File contamDownsampOneIn
 
   command {
     verifyBamHomChk.pl \
     -o ${outputDir + "/contamination"} \
     -b ${bamFile} \
     -d ${contamDownsampOneIn} \
-    -j ${outputDir + "/contamination/" + bamName + "_summary.json"} \
+    -j ${outputDir + "/contamination/" + bamName + "_summary.json"} 
+
+    # if(process.equals("tumour")) {
+    #   thisJob.getCommand().addArgument("-a " + OUTDIR + "/" + tumourCount + "/ascat/*.copynumber.caveman.csv"); // not the best approach but works
+    # }
+
   }
 
   output {
@@ -142,14 +149,62 @@ task ascat {
   File tumorBamFile
   File normalBamFile
   File genomeFa
-  File refExclude
+  String refBase
   String seqType
   String assembly
   String species
   String outputDir
+  String process
+  String gender
+  Int index
+  Int tumorCount
 
   command {
-    ascat.pl \
+    ascat.pl
+    -p ${process} \
+    -i ${index} \
+    -r ${genomeFa} \
+    -pr ${seqType} \
+    -ra ${assembly}
+    -rs ${species} \
+    -g ${gender} \
+    -pl "ILLUMINA" \    
+    -s ${refBase + "/ascat/SnpLocus.tsv"} \
+    -sp ${refBase + "/ascat/SnpPositions.tsv"} \
+    -sg ${refBase + "/ascat/SnpGcCorrections.tsv"} \
+    -o ${outputDir + "/" + tumorCount + "/ascat"} \
+    -t ${tumorBamFile} \
+    -n ${normalBamFile} \
+    -f
+}
+
+  output {
+    Array[File] ascatOutput = glob("${outputDir}/${tumorCount}/ascat/*")
+  }
+
+  runtime {
+    docker: "sanger-somatic-vc-workflow"
+  }
+
+}
+
+# TODO
+task pindel {
+  File tumorBamFile
+  File normalBamFile
+  File genomeFa
+  File refExclude
+  String refBase
+  String seqType
+  String assembly
+  String species
+  String outputDir
+  String process
+  Int pindelInputThreads
+  Int index
+
+  command {
+    pindel.pl \
     -p ${process} \
     -r ${genomeFa} \
     -e ${refExclude} \
@@ -164,7 +219,13 @@ task ascat {
     -b ${refBase + "/brass/ucscHiDepth_0.01_mrg1000_no_exon_coreChrs.bed.gz"} \
     -o ${outputDir + "/pindel"} \
     -t ${tumorBamFile} \
-    -n ${normalBamFile}
+    -n ${normalBamFile} \
+    -c ${pindelInputThreads}
+
+    # if(!process.equals("pindel")) {
+    #   thisJob.getCommand().addArgument("-i " + index);
+    # }
+
   }
 
   output {
@@ -176,7 +237,7 @@ task ascat {
   }
 }
 
-caveCnPrep {
+task caveCnPrep {
   File cnPath
   Int tumorCount
   String type
@@ -201,7 +262,7 @@ caveCnPrep {
 }
 
 # TODO
-cavemanBaseJob {
+task cavemanBaseJob {
   String process
   String refBase
   String seqType
@@ -231,15 +292,15 @@ cavemanBaseJob {
     -sa ${assembly} \
     -s ${species} \
     -st ${seqProtocol} \
-    -o ${OUTDIR + "/" + tumourCount + "/caveman"} \
-    -tc ${OUTDIR + "/" + tumourCount + "/tumour.cn.bed"} \
-    -nc ${OUTDIR + "/" + tumourCount + "/normal.cn.bed"} \
+    -o ${outputDir + "/" + tumourCount + "/caveman"} \
+    -tc ${outputDir + "/" + tumourCount + "/tumour.cn.bed"} \
+    -nc ${outputDir + "/" + tumourCount + "/normal.cn.bed"} \
     -k ${ascatContamFile} \
     -tb ${tumorBam} \
     -nb ${normalBam} \
     -r ${genomeFai} \
     -u ${refBase + "/caveman"}
-    ${processFlag
+    # ${processFlag}
   }
 
   output {
@@ -251,4 +312,51 @@ cavemanBaseJob {
   }
 }
 
+task brass {
+  File tumorBam
+  File controlBam
+  File genomeFa
+  File refExclude
+  String process
+  String refBase
+  String seqType
+  String assembly
+  String species
+  String outputDir
+  Int tumorCount
 
+  command {
+    brass.pl \
+    -j 4 \
+    -k 4 \
+    -p ${process} \
+    -g ${genomeFa} \
+    -e ${refExclude} \
+    -pr ${seqType} \
+    -as ${assembly} \
+    -s ${species} \
+    -pl "ILLUMINA" \
+    -d  ${refBase + "/brass/ucscHiDepth_0.01_mrg1000_no_exon_coreChrs.bed.gz"} \
+    -f  ${refBase + "/brass/brass_np.groups.gz"} \
+    -g_cache  ${refBase + "/vagrent/e75/Homo_sapiens.GRCh37.75.vagrent.cache.gz"} \
+    -o ${outputDir + "/" + tumourCount + "/brass"} \
+    -t ${tumourBam} \
+    -n ${controlBam} \
+    -vi ${refBase + "/brass/viral.1.1.genomic.fa"} \
+    -mi ${refBase + "/brass/all_ncbi_bacteria.20150703"} \
+    -b ${refBase + "/brass/hs37d5_500bp_windows.gc.bed.gz"}
+  }
+  
+  output {
+    Array[File] brassOut = glob("${outputDir}/brass/*")
+  }
+
+  runtime {
+    docker: "sanger-somatic-vc-workflow"
+  }
+}
+
+
+workflow sanger-cgp-somatic-vc {
+
+}
