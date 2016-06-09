@@ -1,37 +1,12 @@
-task get_bam_basename {
-  File bamFile
+task getSampleId {
+  File inBam
 
   command {
-    basename ${bamFile} .bam
-    
+     samtools view -H ${inBam} | grep "SM:" | sed 's/.*SM:\(.*\)\t.*/\1/g'
   }
 
   output {
-    String base = read_string(stdout())
-  }
-
-  runtime {
-    docker: "bwa-workflow"
-  }
-}
-
-task bbAlleleCount {
-  File bamFile
-  String bamName
-  String refBase
-  String outputDir
-
-  command <<<
-    for chr in {1..23}; do
-      execute_with_sample ${bamFile} alleleCounter \
-      -l ${refBase + "/battenberg/1000genomesloci/1000genomesloci2012_chr" + chr + ".txt"} \ 
-      -o ${outputDir + "/" + bamName + "." + chr ".tsv"} \
-      -b ${bamFile};
-    done
-  >>>
-
-  output {
-    Array[File] alleleCounts = glob("${outputDir}/${bamName}.*.tsv")
+    String SM = read_string(stdout())
   }
 
   runtime {
@@ -39,17 +14,57 @@ task bbAlleleCount {
   }
 }
 
-# TODO
-task bbAlleleMerge {
+task compareGenotype {
   File controlBam
-  String bbDir
+  File tumorBam
+  String baseName
+  String outputDir
 
   command {
-    packageImpute.pl ${controlBam} ${bbDir}
+    compareBamGenotypes.pl \
+    -o ${outputDir + "/genotype"} \
+    -nb ${controlBam} \
+    -j ${outputDir + "/genotype/" + baseName + "_summary.json"} \
+    -tb ${tumorBam}
   }
 
   output {
-    # File alleleCounts = "${outputDir}/${bamName}.${chr}.tsv"
+    File genotype = "${outputDir}/genotype/${baseName}_summary.json"
+  }
+
+  runtime {
+    docker: "sanger-somatic-vc-workflow"
+  }
+}
+
+
+task analyzeContamination {
+  File bamFile
+  Array[File]? ascatSegmentFiles
+  Int contamDownsampOneIn = 25
+  String process
+  String baseName
+  String outputDir
+
+  command <<<
+    if [ ${process} == "tumor" ]; then
+      verifyBamHomChk.pl \
+      -o ${outputDir + "/contamination"} \
+      -b ${bamFile} \
+      -d ${contamDownsampOneIn} \
+      -j ${outputDir + "/contamination/" + baseName + "_" + process + "_summary.json"}
+      -a ${ascatSegmentFiles}
+    else
+      verifyBamHomChk.pl \
+      -o ${outputDir + "/contamination"} \
+      -b ${bamFile} \
+      -d ${contamDownsampOneIn} \
+      -j ${outputDir + "/contamination/" + baseName + "_" + process + "_summary.json"}
+    fi
+  >>>
+
+  output {
+    File contamFile = "${outputDir}/contamination/${baseName}_${process}_summary.json"
   }
 
   runtime {
@@ -59,16 +74,16 @@ task bbAlleleMerge {
 
 task bam_stats {
   File bamFile
-  String bamName
+  String baseName
   String outputDir
 
   command {
     bam_stats -i ${bamFile} \
-              -o ${outputDir + "/" + bamName + ".bas"}
+              -o ${outputDir + "/" + baseName + ".bas"}
   }
 
   output {
-    File bamStats = ${outputDir + "/" + bamName + ".bas"}
+    File basFile = "${outputDir}/${baseName}.bas"
   }
 
   runtime {
@@ -76,13 +91,38 @@ task bam_stats {
   }
 }
 
-task qc_and_metrics {
-  File controlBamFile
-  Array[File] tumorBamFiles
+task bbAlleleCount {
+  File bamFile
+  String baseName
+  String refBase
+  String chr
+  String outputDir
+
+  command <<<
+    for chr in {1..23}; do
+      execute_with_sample ${bamFile} alleleCounter \
+      -l ${refBase + "/battenberg/1000genomesloci/1000genomesloci2012_chr" + chr + ".txt"} \ 
+      -o ${outputDir + "/" + baseName + "." + chr + ".tsv"} \
+      -b ${bamFile};
+    done
+  >>>
+
+  output {
+    Array[File] alleleCounts = glob("${outputDir}/${baseName}.*.tsv")
+  }
+
+  runtime {
+    docker: "sanger-somatic-vc-workflow"
+  }
+}
+
+task qc_metrics {
+  File controlBam
+  File tumorBam
   String outputDir
 
   command {
-    qc_and_metrics.pl ${outputDir} ${controlBamFile} ${sep=" " tumorBamFiles}
+    qc_and_metrics.pl ${outputDir} ${controlBam} ${tumorBam}
   }
 
   output {
@@ -94,72 +134,21 @@ task qc_and_metrics {
   }
 }
 
-
-task compareGenotype {
-  File normalBamFile
-  Array[File]+ tumorBamFiles
-  String bamName
-  String outputDir
-
-  command {
-    compareBamGenotypes.pl \
-    -o ${outputDir + "/genotype"} \
-    -nb ${normalBamFile} \
-    -j ${outputDir + "/genotype/" + bamName + "_summary.json"} \
-    -tb ${sep=" -tb " tumorBamFiles}
-  }
-
-  output {
-    File genotype = ${outputDir + "/genotype/" + bamName + "_summary.json"}
-  }
-
-  runtime {
-    docker: "sanger-somatic-vc-workflow"
-  }
-}
-
-# TODO
-task analyzeContamination {
-  File bamFile
-  String bamName
-  String outputDir
-  # File contamDownsampOneIn
-
-  command {
-    verifyBamHomChk.pl \
-    -o ${outputDir + "/contamination"} \
-    -b ${bamFile} \
-    -d ${contamDownsampOneIn} \
-    -j ${outputDir + "/contamination/" + bamName + "_summary.json"} 
-
-    # if(process.equals("tumour")) {
-    #   thisJob.getCommand().addArgument("-a " + OUTDIR + "/" + tumourCount + "/ascat/*.copynumber.caveman.csv"); // not the best approach but works
-    # }
-
-  }
-
-  output {
-    File contamFile = ${outputDir + "/contamination/" + bamName + "_summary.json"}
-  }
-
-  runtime {
-    docker: "sanger-somatic-vc-workflow"
-  }
-}
-
 task ascat {
-  File tumorBamFile
-  File normalBamFile
+  File tumorBam
+  File controlBam
   File genomeFa
+  # File snpPos
+  # File snpLoci
+  # File snpGc
+  String process
+  Int index
   String refBase
   String seqType
   String assembly
   String species
-  String outputDir
-  String process
   String gender
-  Int index
-  Int tumorCount
+  String outputDir
 
   command {
     ascat.pl
@@ -174,60 +163,56 @@ task ascat {
     -s ${refBase + "/ascat/SnpLocus.tsv"} \
     -sp ${refBase + "/ascat/SnpPositions.tsv"} \
     -sg ${refBase + "/ascat/SnpGcCorrections.tsv"} \
-    -o ${outputDir + "/" + tumorCount + "/ascat"} \
-    -t ${tumorBamFile} \
-    -n ${normalBamFile} \
+    -o ${outputDir + "/ascat"} \
+    -t ${tumorBam} \
+    -n ${controlBam} \
     -f
-}
+  }
 
   output {
-    Array[File] ascatOutput = glob("${outputDir}/${tumorCount}/ascat/*")
+    Array[File] ascatOutput = glob("${outputDir}/ascat/*")
   }
 
   runtime {
     docker: "sanger-somatic-vc-workflow"
   }
-
 }
 
-# TODO
 task pindel {
-  File tumorBamFile
-  File normalBamFile
+  File tumorBam
+  File controlBam
   File genomeFa
-  File refExclude
+  File refExclude = "MT,GL%,hs37d5,NC_007605"
   String refBase
   String seqType
   String assembly
   String species
   String outputDir
   String process
-  Int pindelInputThreads
-  Int index
+  Int? pindelInputThreads
+  Int? pindelNormalisedThreads
+  Int? index
 
   command {
-    pindel.pl \
-    -p ${process} \
-    -r ${genomeFa} \
-    -e ${refExclude} \
-    -st ${seqType} \
-    -as ${assembly}
-    -sp ${species} \
-    -s ${refBase + "/pindel/simpleRepeats.bed.gz"} \
-    -f ${refBase + "/pindel/genomicRules.lst"} \
-    -g ${refBase + "/pindel/human.GRCh37.indelCoding.bed.gz"} \
-    -u ${refBase + "/pindel/pindel_np.gff3.gz"} \
-    -sf ${refBase + "/pindel/softRules.lst"} \
-    -b ${refBase + "/brass/ucscHiDepth_0.01_mrg1000_no_exon_coreChrs.bed.gz"} \
-    -o ${outputDir + "/pindel"} \
-    -t ${tumorBamFile} \
-    -n ${normalBamFile} \
-    -c ${pindelInputThreads}
-
-    # if(!process.equals("pindel")) {
-    #   thisJob.getCommand().addArgument("-i " + index);
-    # }
-
+      pindel.pl \
+      -p ${process} \
+      -r ${genomeFa} \
+      -e ${refExclude} \
+      -st ${seqType} \
+      -as ${assembly}
+      -sp ${species} \
+      -s ${refBase + "/pindel/simpleRepeats.bed.gz"} \
+      -f ${refBase + "/pindel/genomicRules.lst"} \
+      -g ${refBase + "/pindel/human.GRCh37.indelCoding.bed.gz"} \
+      -u ${refBase + "/pindel/pindel_np.gff3.gz"} \
+      -sf ${refBase + "/pindel/softRules.lst"} \
+      -b ${refBase + "/brass/ucscHiDepth_0.01_mrg1000_no_exon_coreChrs.bed.gz"} \
+      -o ${outputDir + "/pindel"} \
+      -t ${tumorBam} \
+      -n ${controlBam}
+      ${"-i " + index}
+      ${"-c " + pindelInputThreads}
+      ${"-l " + pindelNormalisedThreads}
   }
 
   output {
@@ -239,9 +224,59 @@ task pindel {
   }
 }
 
+
+task brass {
+  File tumorBam
+  File controlBam
+  File genomeFa
+  File refExclude
+  File? cnPath
+  File? cnStats
+  String process
+  String refBase
+  String seqType
+  String assembly
+  String species
+  String outputDir
+  Int? index
+
+  command {
+    brass.pl \
+    -j 4 \
+    -k 4 \
+    -p ${process} \
+    -g ${genomeFa} \
+    -e ${refExclude} \
+    -pr ${seqType} \
+    -as ${assembly} \
+    -s ${species} \
+    -pl "ILLUMINA" \
+    -d  ${refBase + "/brass/ucscHiDepth_0.01_mrg1000_no_exon_coreChrs.bed.gz"} \
+    -f  ${refBase + "/brass/brass_np.groups.gz"} \
+    -g_cache  ${refBase + "/vagrent/e75/Homo_sapiens.GRCh37.75.vagrent.cache.gz"} \
+    -o ${outputDir + "/brass"} \
+    -t ${tumorBam} \
+    -n ${controlBam} \
+    -vi ${refBase + "/brass/viral.1.1.genomic.fa"} \
+    -mi ${refBase + "/brass/all_ncbi_bacteria.20150703"} \
+    -b ${refBase + "/brass/hs37d5_500bp_windows.gc.bed.gz"}
+    ${"-i " + index} \
+    ${"-a" + cnPath} \
+    ${"-ss" + cnStats}
+  }
+  
+  output {
+    Array[File] brassOut = glob("${outputDir}/brass/*")
+  }
+
+  runtime {
+    docker: "sanger-somatic-vc-workflow"
+  }
+}
+
+
 task caveCnPrep {
   File cnPath
-  Int tumorCount
   String type
   String outputDir
   
@@ -251,11 +286,11 @@ task caveCnPrep {
   else
     export OFFSET=4 ;
   fi ;
-  perl -ne '@F=(split q{,}, $_)[1,2,3," + $OFFSET + "]; $F[1]-1; print join(\"\\t\",@F).\"\\n\";' < ${CnPath} > ${outputDir + "/" + tumorCount + "/" + type + ".cn.bed"} ;
+  perl -ne '@F=(split q{,}, $_)[1,2,3," + $OFFSET + "]; $F[1]-1; print join(\"\\t\",@F).\"\\n\";' < ${cnPath} > ${outputDir + "/" + type + ".cn.bed"} ;
   >>>
  
   output {
-    File caveCnPrepOut = ${outputDir + "/" + tumorCount + "/" + type + ".cn.bed"}
+    File caveCnPrepOut = "${outputDir}/${type}.cn.bed"
   }
 
   runtime {
@@ -264,7 +299,7 @@ task caveCnPrep {
 }
 
 # TODO
-task cavemanBaseJob {
+task caveman {
   String process
   String refBase
   String seqType
@@ -294,19 +329,18 @@ task cavemanBaseJob {
     -sa ${assembly} \
     -s ${species} \
     -st ${seqProtocol} \
-    -o ${outputDir + "/" + tumourCount + "/caveman"} \
-    -tc ${outputDir + "/" + tumourCount + "/tumour.cn.bed"} \
-    -nc ${outputDir + "/" + tumourCount + "/normal.cn.bed"} \
+    -o ${outputDir + "/caveman"} \
+    -tc ${outputDir + "/tumour.cn.bed"} \
+    -nc ${outputDir + "/normal.cn.bed"} \
     -k ${ascatContamFile} \
     -tb ${tumorBam} \
-    -nb ${normalBam} \
+    -nb ${controlBam} \
     -r ${genomeFai} \
     -u ${refBase + "/caveman"}
-    # ${processFlag}
   }
 
   output {
-    # File cavemanOut = ${outputDir + "/"}
+    Array[File] cavemanOut = glob("${outputDir}/caveman/*")
   }
 
   runtime {
@@ -314,102 +348,124 @@ task cavemanBaseJob {
   }
 }
 
-task brass {
-  File tumorBam
+workflow sanger_cgp_somatic_vc {
   File controlBam
+  File tumorBam
   File genomeFa
-  File refExclude
-  String process
-  String refBase
-  String seqType
-  String assembly
-  String species
-  String outputDir
-  Int tumorCount
-
-  command {
-    brass.pl \
-    -j 4 \
-    -k 4 \
-    -p ${process} \
-    -g ${genomeFa} \
-    -e ${refExclude} \
-    -pr ${seqType} \
-    -as ${assembly} \
-    -s ${species} \
-    -pl "ILLUMINA" \
-    -d  ${refBase + "/brass/ucscHiDepth_0.01_mrg1000_no_exon_coreChrs.bed.gz"} \
-    -f  ${refBase + "/brass/brass_np.groups.gz"} \
-    -g_cache  ${refBase + "/vagrent/e75/Homo_sapiens.GRCh37.75.vagrent.cache.gz"} \
-    -o ${outputDir + "/" + tumourCount + "/brass"} \
-    -t ${tumourBam} \
-    -n ${controlBam} \
-    -vi ${refBase + "/brass/viral.1.1.genomic.fa"} \
-    -mi ${refBase + "/brass/all_ncbi_bacteria.20150703"} \
-    -b ${refBase + "/brass/hs37d5_500bp_windows.gc.bed.gz"}
-  }
-  
-  output {
-    Array[File] brassOut = glob("${outputDir}/brass/*")
-  }
-
-  runtime {
-    docker: "sanger-somatic-vc-workflow"
-  }
-}
-
-
-workflow sanger-cgp-somatic-vc {
+  String seqType = "WGS"
+  String assembly = "GRCh37"
+  String species = "human"
+  String gender
+  String referenceDir
+  String globalOutputDir = "/output/"
+  Array[Int] pindelScatterIndices = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
   Array[Int] cavemandSplitIndices = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86]
 
   ##
   ## QC/Prep steps
   ##
+  call getSampleId as tumor_sampleId {
+    input: inBam = tumorBam
+  }
+
+  call getSampleId as control_sampleId {
+    input: inBam = controlBam
+  }
+
   call compareGenotype {
-    inputs:
+    input: controlBam = controlBam, 
+            tumorBam = tumorBam,
+            baseName = "genotype",
+            outputDir = globalOutputDir
   }
 
   call analyzeContamination as control_contam {
-    inputs:
+    input: process = "control",
+            bamFile = controlBam,
+            baseName = control_sampleId.SM,
+            outputDir = globalOutputDir
   }
 
   call analyzeContamination as tumor_contam {
-    inputs:
+    input: process = "tumor",
+            bamFile = tumorBam,
+            baseName = tumor_sampleId.SM,
+            outputDir = globalOutputDir
   }
   
   call bam_stats as control_bam_stats {
-    inputs:
+    input: bamFile = controlBam, 
+            baseName = control_sampleId.SM,
+            outputDir = globalOutputDir
   }
 
-  scatter(tbam in tumorBams) {
-    call bam_stats {
-      inputs:
-    }
+  call bam_stats as tumor_bam_stats {
+    input: bamFile = tumorBam, 
+            baseName = tumor_sampleId.SM,
+            outputDir = globalOutputDir
+  }
     
-    call bbAlleleCount {
-      inputs:
-    }
+  call bbAlleleCount as control_bbAlleleCount {
+    input: bamFile = controlBam, 
+            baseName = control_sampleId.SM,
+            refBase = referenceDir,
+            outputDir = globalOutputDir
   }
 
-  call bbAlleleMerge {
-   inputs:
+  call bbAlleleCount as tumor_bbAlleleCount {
+    input: bamFile = tumorBam, 
+            baseName = tumor_sampleId.SM,
+            refBase = referenceDir,
+            outputDir = globalOutputDir
   }
 
+  call qc_metrics {
+    input: controlBam = controlBam,
+            tumorBam = tumorBam,
+            outputDir = globalOutputDir
+  }
 
   ##
   ## ASCAT - copynumber analysis
   ##
-  # scatter ?
   call ascat as ascat_allele_count {
-    inputs: process=allele_count,
+    input: process = "allele_count",
+            controlBam = controlBam,
+            tumorBam = tumorBam,
+            index = 1, 
+            genomeFa = genomeFa,
+            seqType = seqType,
+            assembly = assembly,
+            species = species,
+            gender = gender,
+            outputDir = globalOutputDir
   }
   
-   call ascat {
-    inputs: process=ascat,
+  call ascat {
+    input: process = "ascat",
+            controlBam = controlBam,
+            tumorBam = tumorBam,
+            index = 1, 
+            genomeFa = genomeFa,
+            seqType = seqType,
+            assembly = assembly,
+            species = species,
+            gender = gender,
+            outputDir = globalOutputDir
   }
 
   call ascat as ascat_finalise {
-    inputs: process=finalise,
+    input: process = "finalise",
+            controlBam = controlBam,
+            tumorBam = tumorBam,
+            refBase = referenceDir, 
+            index = 1, 
+            genomeFa = genomeFa,
+            seqType = seqType,
+            assembly = assembly,
+            species = species,
+            gender = gender,
+            outputDir = globalOutputDir
   }
 
 
@@ -417,129 +473,283 @@ workflow sanger-cgp-somatic-vc {
   ## Pindel - InDel calling
   ##
   call pindel as pindel_input1 {
-    inputs: process=input, 
-            index=1,
+    input: process="input", 
+            pindelInputThreads = pindelInputThreads,
+            index = 1,
+            controlBam = controlBam,
+            tumorBam = tumorBam,
+            refBase = referenceDir, 
+            genomeFa = genomeFa,
+            seqType = seqType,
+            assembly = assembly,
+            species = species,
+            outputDir = globalOutputDir
   }
 
   call pindel as pindel_input2 {
-    inputs: process=input, 
-            index=2,
+    input: process="input", 
+            pindelInputThreads = pindelInputThreads,
+            index = 2,
+            controlBam = controlBam,
+            tumorBam = tumorBam,
+            refBase = referenceDir, 
+            genomeFa = genomeFa,
+            seqType = seqType,
+            assembly = assembly,
+            species = species,
+            outputDir = globalOutputDir
   }
 
   call pindel {
-    inputs: process=pindel, 
+    input: process="pindel",
+            pindelInputThreads = pindelNormalisedThreads,
+            pindelNormalisedThreads = pindelNormalisedThreads,
+            controlBam = controlBam,
+            tumorBam = tumorBam,
+            refBase = referenceDir, 
+            genomeFa = genomeFa,
+            seqType = seqType,
+            assembly = assembly,
+            species = species,
+            outputDir = globalOutputDir
   }
 
-  # scatter?
-  call pindel as pindel_pin2vcf {
-    inputs: process=pin2vcf, 
+  # number of refs to process
+  # 1-22, X, Y
+  scatter(i in pindelScatterIndices) {
+    call pindel as pindel_pin2vcf {
+      input: process = "pin2vcf", 
+              index = i,
+              controlBam = controlBam,
+              tumorBam = tumorBam,
+              refBase = referenceDir, 
+              genomeFa = genomeFa,
+              seqType = seqType,
+              assembly = assembly,
+              species = species,
+              outputDir = globalOutputDir
+    }
   }
 
   call pindel as pindel_merge {
-    inputs: process=merge, 
+    input: process = "merge",
+            index = 1, 
+            controlBam = controlBam,
+            tumorBam = tumorBam,
+            refBase = referenceDir, 
+            genomeFa = genomeFa,
+            seqType = seqType,
+            assembly = assembly,
+            species = species,
+            outputDir = globalOutputDir
   }
 
   call pindel as pindel_flag {
-    inputs: process=flag, 
+    input: process = "flag", 
+            index = 1,
+            controlBam = controlBam,
+            tumorBam = tumorBam,
+            refBase = referenceDir, 
+            genomeFa = genomeFa,
+            seqType = seqType,
+            assembly = assembly,
+            species = species,
+            outputDir = globalOutputDir
   }
-
 
   ##
   ## BRASS - breakpoint analysis
   ##
   call brass as brass_input1 {
-    inputs: process=input, 
+    input: process = "input",
+            index = 1,
+            controlBam = controlBam,
+            tumorBam = tumorBam,
+            refBase = referenceDir, 
+            genomeFa = genomeFa,
+            seqType = seqType,
+            assembly = assembly,
+            species = species,
+            outputDir = globalOutputDir
   }
 
   call brass as brass_input2 {
-    inputs: process=input, 
-            index=2,
+    input: process = "input", 
+            index = 2,
+            controlBam = controlBam,
+            tumorBam = tumorBam,
+            refBase = referenceDir, 
+            genomeFa = genomeFa,
+            seqType = seqType,
+            assembly = assembly,
+            species = species,
+            outputDir = globalOutputDir
   }
 
   call brass as brass_cover {
-    inputs: process=cover, 
+    input: process = "cover", 
+            controlBam = controlBam,
+            tumorBam = tumorBam,
+            refBase = referenceDir, 
+            genomeFa = genomeFa,
+            seqType = seqType,
+            assembly = assembly,
+            species = species,
+            outputDir = globalOutputDir
   }
 
   call brass as brass_merge {
-    inputs: process=merge, 
+    input: process = "merge", 
+            controlBam = controlBam,
+            tumorBam = tumorBam,
+            refBase = referenceDir, 
+            genomeFa = genomeFa,
+            seqType = seqType,
+            assembly = assembly,
+            species = species,
+            outputDir = globalOutputDir
   }
 
   call brass as brass_group {
-    inputs: process=group, 
+    input: process = "group", 
+            controlBam = controlBam,
+            tumorBam = tumorBam,
+            refBase = referenceDir, 
+            genomeFa = genomeFa,
+            seqType = seqType,
+            assembly = assembly,
+            species = species,
+            outputDir = globalOutputDir
   }
 
   call brass as brass_isize {
-    inputs: process=isize, 
+    input: process = "isize", 
+            controlBam = controlBam,
+            tumorBam = tumorBam,
+            refBase = referenceDir, 
+            genomeFa = genomeFa,
+            seqType = seqType,
+            assembly = assembly,
+            species = species,
+            outputDir = globalOutputDir
   }
 
   call brass as brass_normcn {
-    inputs: process=normcn, 
+    input: process = "normcn", 
+            controlBam = controlBam,
+            tumorBam = tumorBam,
+            refBase = referenceDir, 
+            genomeFa = genomeFa,
+            seqType = seqType,
+            assembly = assembly,
+            species = species,
+            outputDir = globalOutputDir
   }
 
   call brass as brass_filter {
-    inputs: process=filter, 
+    input: process = "filter", 
+            controlBam = controlBam,
+            tumorBam = tumorBam,
+            refBase = referenceDir, 
+            genomeFa = genomeFa,
+            seqType = seqType,
+            assembly = assembly,
+            species = species,
+            outputDir = globalOutputDir
   }
 
   call brass as brass_split {
-    inputs: process=split, 
+    input: process = "split", 
+            controlBam = controlBam,
+            tumorBam = tumorBam,
+            refBase = referenceDir, 
+            genomeFa = genomeFa,
+            seqType = seqType,
+            assembly = assembly,
+            species = species,
+            outputDir = globalOutputDir
   }
 
   call brass as brass_assemble {
-    inputs: process=split, 
+    input: process = "split", 
+            controlBam = controlBam,
+            tumorBam = tumorBam,
+            refBase = referenceDir, 
+            genomeFa = genomeFa,
+            seqType = seqType,
+            assembly = assembly,
+            species = species,
+            outputDir = globalOutputDir
   }
 
   call brass as brass_grass {
-    inputs: process=grass, 
+    input: process = "grass", 
+            controlBam = controlBam,
+            tumorBam = tumorBam,
+            refBase = referenceDir, 
+            genomeFa = genomeFa,
+            seqType = seqType,
+            assembly = assembly,
+            species = species,
+            outputDir = globalOutputDir
   }
 
   call brass as brass_tabix {
-    inputs: process=tabix, 
+    input: process = "tabix", 
+            controlBam = controlBam,
+            tumorBam = tumorBam,
+            refBase = referenceDir, 
+            genomeFa = genomeFa,
+            seqType = seqType,
+            assembly = assembly,
+            species = species,
+            outputDir = globalOutputDir
   }
 
   ##
   ## Caveman - SNV analysis
   ##
   call caveCnPrep as control_caveCnPrep {
-    inputs: type=control,
+    input: type = "control",
   }
 
   call caveCnPrep as tumor_caveCnPrep {
-    inputs: type=tumor, 
+    input: type = "tumor", 
   }
 
   scatter(i in caveManSplitIndices) {
     call caveman as caveman_split {
-      inputs: process=split, 
-              index=i,
+      input: process = "split", 
+              index = i,
     }
   }
 
   call caveman as caveman_split_concat {
-    inputs: process=split_concat, 
+    input: process = "split_concat", 
   }
 
   call caveman as caveman_mstep {
-    inputs: process=mstep, 
+    input: process = "mstep", 
   }
 
   call caveman as caveman_merge {
-    inputs: process=merge, 
+    input: process = "merge", 
   }
 
   call caveman as caveman_estep {
-    inputs: process=estep, 
+    input: process = "estep", 
   }
 
   call caveman as caveman_merge_results {
-    inputs: process=merge_results, 
+    input: process = "merge_results", 
   }
 
   call caveman as caveman_add_ids {
-    inputs: process=add_ids, 
+    input: process = "add_ids", 
   }
 
   call caveman as caveman_flag {
-    inputs: process=flag, 
+    input: process = "flag", 
   }
 
 }

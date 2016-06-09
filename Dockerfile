@@ -325,8 +325,10 @@ RUN curl -sSL -o tmp.tar.gz --retry 10 https://github.com/wrpearson/fasta36/rele
 
 RUN echo "options(bitmapType='cairo')" > /home/.Rprofile
 
+COPY ./workflow_scripts/* $OPT/bin/
+
 ### END of CGP INSTALL ###
 
-WORKDIR /home
+WORKDIR /output
 VOLUME /output
 CMD /bin/bash
