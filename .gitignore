@@ -1,3 +1,4 @@
 tmp*
 test*
 *.tar.gz
+tool-metadata/
