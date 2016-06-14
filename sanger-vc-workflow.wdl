@@ -16,20 +16,26 @@ task getSampleId {
 
 task compareGenotype {
   File controlBam
+  String controlBamId
   File tumorBam
-  String baseName
+  String tumorBamId
   String outputDir
 
   command {
     compareBamGenotypes.pl \
     -o ${outputDir + "/genotype"} \
     -nb ${controlBam} \
-    -j ${outputDir + "/genotype/" + baseName + "_summary.json"} \
+    -j ${outputDir + "/genotype/summary.json"} \
     -tb ${tumorBam}
   }
 
   output {
-    File genotype = "${outputDir}/genotype/${baseName}_summary.json"
+    File genotypeSummary = "${outputDir}/genotype/summary.json"
+    File controlGender = "${outputDir}/genotype/${controlBamId}.full_gender.tsv"
+    File controlGenotype = "${outputDir}/genotype/${controlBamId}.full_genotype.tsv"
+    File tumorGender = "${outputDir}/genotype/${tumorBamId}.full_gender.tsv"
+    File tumorGenotype = "${outputDir}/genotype/${tumorBamId}.full_genotype.tsv"
+    File tumorVsControlGenotype = "${outputDir}/genotype/${tumorBamId}_vs_${controlBamId}.genotype.txt"
   }
 
   runtime {
@@ -37,13 +43,12 @@ task compareGenotype {
   }
 }
 
-
 task analyzeContamination {
   File bamFile
-  Array[File]? ascatSegmentFiles
+  String SM
+  File? ascatSegmentFile
   Int contamDownsampOneIn = 25
   String process
-  String baseName
   String outputDir
 
   command <<<
@@ -52,19 +57,25 @@ task analyzeContamination {
       -o ${outputDir + "/contamination"} \
       -b ${bamFile} \
       -d ${contamDownsampOneIn} \
-      -j ${outputDir + "/contamination/" + baseName + "_" + process + "_summary.json"}
-      -a ${ascatSegmentFiles}
+      -j ${outputDir + "/contamination/" + SM + "_" + process + "_summary.json"}
+      -a ${ascatSegmentFile}
     else
       verifyBamHomChk.pl \
       -o ${outputDir + "/contamination"} \
       -b ${bamFile} \
       -d ${contamDownsampOneIn} \
-      -j ${outputDir + "/contamination/" + baseName + "_" + process + "_summary.json"}
+      -j ${outputDir + "/contamination/" + SM + "_" + process + "_summary.json"}
     fi
   >>>
 
   output {
-    File contamFile = "${outputDir}/contamination/${baseName}_${process}_summary.json"
+    File summary = "${outputDir}/contamination/${SM}_summary.json"
+    File depthRG = "${outputDir}/contamination/${SM}.depthRG"
+    File selfRG = "${outputDir}/contamination/${SM}.selfRG"
+    File depthSM = "${outputDir}/contamination/${SM}.depthSM"
+    File selfSM = "${outputDir}/contamination/${SM}.selfSM"
+    File snps = "${outputDir}/contamination/${SM}_snps.vcf"
+    File log = "${outputDir}/contamination/${SM}.log"
   }
 
   runtime {
@@ -74,16 +85,15 @@ task analyzeContamination {
 
 task bam_stats {
   File bamFile
-  String baseName
   String outputDir
 
   command {
     bam_stats -i ${bamFile} \
-              -o ${outputDir + "/" + baseName + ".bas"}
+              -o ${outputDir + "/" + bamFile + ".bas"}
   }
 
   output {
-    File basFile = "${outputDir}/${baseName}.bas"
+    File basFile = "${outputDir}/${bamFile}.bas"
   }
 
   runtime {
@@ -94,18 +104,18 @@ task bam_stats {
 task bbAlleleCount {
   File bamFile
   File bbRefLoci
-  String baseName
+  String SM
   String outputDir
 
   command {
     execute_with_sample ${bamFile} alleleCounter \
     -l ${bbRefLoci} \ 
-    -o ${outputDir + "/bbCounts/" + baseName + "_" + bbRefLoci + ".tsv"} \
+    -o ${outputDir + "/bbCounts/" + SM + "_" + bbRefLoci + ".tsv"} \
     -b ${bamFile};
   }
 
   output {
-    Array[File] alleleCounts = glob("${outputDir}/${baseName}.*.tsv")
+    File alleleCounts = "${outputDir}/${SM}.${bbRefLoci}.tsv"
   }
 
   runtime {
@@ -113,6 +123,7 @@ task bbAlleleCount {
   }
 }
 
+# How do we pass a directory of files in WDL...?
 task qc_metrics {
   File controlBam
   File tumorBam
@@ -145,6 +156,7 @@ task ascat {
   String assembly
   String species
   String gender
+  String SM
   String outputDir
 
   command {
@@ -168,6 +180,18 @@ task ascat {
 
   output {
     Array[File] ascatOutput = glob("${outputDir}/ascat/*")
+    File abberationReliabilityPng = "${SM}.abberationreliability.png"
+    File ASCATprofilePng = "${SM}.ASCATprofile.png"
+    File ASPCFPng = "${SM}.ASPCF.png"
+    File germlinePng = "${SM}.germline.png"
+    File rawProfilePng = "${SM}.rawprofile.png"
+    File sunrisePng = "${SM}.sunrise.png"
+    File tumorPng = "${SM}.tumor.png"
+    File copynumberCavemanCsv = "${SM}.copynumber.caveman.csv"
+    File copynumberCavemanVcf = "${SM}.copynumber.caveman.vcf.gz"
+    File copynumberCavemanVcfTbi = "${SM}.copynumber.caveman.vcf.gz.tbi"
+    File copynumberTxt = "${SM}.copynumber.txt"
+    File sampleStatistics = "${SM}.samplestatistics.csv"
   }
 
   runtime {
@@ -177,7 +201,9 @@ task ascat {
 
 task pindel {
   File tumorBam
+  String tumorBamId
   File controlBam
+  String controlBamId
   File genomeFa
   File genomeFai
   File simpleRepeatsFile
@@ -220,6 +246,15 @@ task pindel {
 
   output {
     Array[File] pindelOutput = glob("${outputDir}/pindel/*")
+    File flaggedVcf = "${tumorBamId}_vs_${controlBamId}.flagged.vcf.gz"
+    File flaggedVcfTbi = "${tumorBamId}_vs_${controlBamId}.flagged.vcf.gz.tbi"
+    File germlineBed = "${tumorBamId}_vs_${controlBamId}.germline.bed"
+    File mt_bam = "${tumorBamId}_vs_${controlBamId}_mt.bam"
+    File mt_bam_bai = "${tumorBamId}_vs_${controlBamId}_mt.bam.bai"
+    File mt_bam_md5 = "${tumorBamId}_vs_${controlBamId}_mt.bam.md5"
+    File wt_bam = "${tumorBamId}_vs_${controlBamId}_wt.bam"
+    File wt_bam_bai = "${tumorBamId}_vs_${controlBamId}_wt.bam.bai"
+    File wt_bam_md5 = "${tumorBamId}_vs_${controlBamId}_wt.bam.md5"
   }
 
   runtime {
@@ -230,7 +265,9 @@ task pindel {
 
 task brass {
   File tumorBam
+  String tumorBamId
   File controlBam
+  String controlBamId
   File genomeFa
   File genomeFai
   File refExclude
@@ -281,6 +318,18 @@ task brass {
 
   output {
     Array[File] brassOut = glob("${outputDir}/brass/*")
+    Array[File] brassIntermediates = glob("${outputDir}/brass/intermediates/*")
+    File controlBrmBam = "${outputDir}/brass/${controlBamId}.brm.bam"
+    File controlBrmBamBai = "${outputDir}/brass/${controlBamId}.brm.bam.bai"
+    File controlBrmBamMd5 = "${outputDir}/brass/${controlBamId}.brm.bam.md5"
+    File tumorBrmBam = "${outputDir}/brass/${tumorBamId}.brm.bam"
+    File tumorBrmBamBai = "${outputDir}/brass/${tumorBamId}.brm.bam.bai"
+    File tumorBrmBamMd5 = "${outputDir}/brass/${tumorBamId}.brm.bam.md5"
+    File annotBedPe = "${outputDir}/brass/${tumorBamId}_vs_${controlBamId}.annot.bedpe"
+    File annotVcf = "${outputDir}/brass/${tumorBamId}_vs_${controlBamId}.annot.vcf.gz"
+    File annotVcfTbi = "${outputDir}/brass/${tumorBamId}_vs_${controlBamId}.annot.vcf.gz.tbi"
+    File inversions = "${outputDir}/brass/${tumorBamId}_vs_${controlBamId}.inversions.pdf"
+    File diagnosticPlots = "${outputDir}/brass/${tumorBamId}_vs_${controlBamId}.ngscn.diagnostic_plots.pdf"
   }
 
   runtime {
@@ -312,14 +361,17 @@ task caveCnPrep {
   }
 }
 
-
 task caveman {
   File tumorBam
+  String tumorBamId
   File controlBam
+  String controlBamId
   File genomeFa
   File genomeFai
   File ascatContamFile
   File ignoredRegionsFile
+  File tumorCopyNumberFile
+  File controlCopyNumberFile
   File? pindelGermlineMutsFile
   String flagBedFilesDir
   Array[File] flagBedFiles
@@ -345,8 +397,8 @@ task caveman {
     -s ${species} \
     -st ${seqProtocol} \
     -o ${outputDir + "/caveman"} \
-    -tc ${outputDir + "/tumor.cn.bed"} \
-    -nc ${outputDir + "/normal.cn.bed"} \
+    -tc ${tumorCopyNumberFile} \
+    -nc ${controlCopyNumberFile} \
     -k ${ascatContamFile} \
     -tb ${tumorBam} \
     -nb ${controlBam} \
@@ -360,6 +412,13 @@ task caveman {
 
   output {
     Array[File] cavemanOut = glob("${outputDir}/caveman/*")
+    File flaggedMutsVcf = "${outputDir}/brass/${tumorBamId}_vs_${controlBamId}.flagged.muts.vcf.gz"
+    File flaggedMutsVcfTbi = "${outputDir}/brass/${tumorBamId}_vs_${controlBamId}.flagged.muts.vcf.gz.tbi"
+    File mutsIdsVcf = "${outputDir}/brass/${tumorBamId}_vs_${controlBamId}.muts.ids.vcf.gz"
+    File mutsIdsVcfTbi = "${outputDir}/brass/${tumorBamId}_vs_${controlBamId}.muts.ids.vcf.gz.tbi"
+    File snpsIdsVcf = "${outputDir}/brass/${tumorBamId}_vs_${controlBamId}.snps.ids.vcf.gz"
+    File snpsIdsVcfTbi = "${outputDir}/brass/${tumorBamId}_vs_${controlBamId}.snps.ids.vcf.gz.tbi"
+    File noAnalysisBed = "${outputDir}/brass/${tumorBamId}_vs_${controlBamId}.no_analysis.bed"    
   }
 
   runtime {
@@ -436,111 +495,114 @@ workflow sanger_cgp_somatic_vc {
 
   call compareGenotype {
     input: controlBam = controlBam, 
-            tumorBam = tumorBam,
-            baseName = "genotype",
-            outputDir = globalOutputDir
+           controlBamId = control_sampleId.SM,
+           tumorBam = tumorBam,
+           tumorBamId = tumor_sampleId.SM,
+           outputDir = globalOutputDir
   }
 
   call analyzeContamination as control_contam {
     input: process = "control",
-            bamFile = controlBam,
-            baseName = control_sampleId.SM,
-            outputDir = globalOutputDir
+           bamFile = controlBam,
+           SM = control_sampleId.SM,
+           outputDir = globalOutputDir
   }
 
   call analyzeContamination as tumor_contam {
     input: process = "tumor",
-            bamFile = tumorBam,
-            baseName = tumor_sampleId.SM,
-            outputDir = globalOutputDir
+           bamFile = tumorBam,
+           SM = tumor_sampleId.SM,
+           ascatSegmentFile = ascat_finalise.copynumberCavemanCsv,
+           outputDir = globalOutputDir
   }
   
   call bam_stats as control_bam_stats {
     input: bamFile = controlBam, 
-            baseName = control_sampleId.SM,
-            outputDir = globalOutputDir
+           outputDir = globalOutputDir
   }
 
   call bam_stats as tumor_bam_stats {
     input: bamFile = tumorBam, 
-            baseName = tumor_sampleId.SM,
-            outputDir = globalOutputDir
+           outputDir = globalOutputDir
   }
   
   scatter(chrLoci in bbRefLociFiles) {
     call bbAlleleCount as control_bbAlleleCount {
       input: bamFile = controlBam, 
-              baseName = control_sampleId.SM,
-              bbRefLoci = chrLoci,
-              outputDir = globalOutputDir
+             SM = control_sampleId.SM,
+             bbRefLoci = chrLoci,
+             outputDir = globalOutputDir
     }
   
     call bbAlleleCount as tumor_bbAlleleCount {
       input: bamFile = tumorBam, 
-              baseName = tumor_sampleId.SM,
-              bbRefLoci = chrLoci,
-              outputDir = globalOutputDir
+             SM = tumor_sampleId.SM,
+             bbRefLoci = chrLoci,
+             outputDir = globalOutputDir
     }
   }
 
-  call qc_metrics {
-    input: controlBam = controlBam,
-            tumorBam = tumorBam,
-            outputDir = globalOutputDir
-  }
+  # call qc_metrics {
+  #   input: controlBam = controlBam,
+  #          tumorBam = tumorBam,
+  #          outputDir = globalOutputDir
+  # }
 
   ##
   ## ASCAT - copynumber analysis
   ##
   call ascat as ascat_allele_count {
     input: process = "allele_count",
-            controlBam = controlBam,
-            tumorBam = tumorBam,
-            index = 1, 
-            genomeFa = genomeFa,
-            genomeFai = genomeFai, 
-            snpPosFile = snpPosFile,
-            snpLociFile = snpLociFile,
-            snpGcCorrectionsFile = snpGcCorrectionsFile,
-            seqType = seqType,
-            assembly = assembly,
-            species = species,
-            gender = gender,
-            outputDir = globalOutputDir
+           controlBam = controlBam,
+           tumorBam = tumorBam,
+           SM = tumor_sampleId.SM,
+           index = 1, 
+           genomeFa = genomeFa,
+           genomeFai = genomeFai, 
+           snpPosFile = snpPosFile,
+           snpLociFile = snpLociFile,
+           snpGcCorrectionsFile = snpGcCorrectionsFile,
+           seqType = seqType,
+           assembly = assembly,
+           species = species,
+           gender = gender,
+           outputDir = globalOutputDir
   }
   
   call ascat {
     input: process = "ascat",
-            controlBam = controlBam,
-            tumorBam = tumorBam,
-            index = 1, 
-            genomeFa = genomeFa,
-            genomeFai = genomeFai, 
-            snpPosFile = snpPosFile,
-            snpLociFile = snpLociFile,
-            snpGcCorrectionsFile = snpGcCorrectionsFile,
-            seqType = seqType,
-            assembly = assembly,
-            species = species,
-            gender = gender,
-            outputDir = globalOutputDir
+           controlBam = controlBam,
+           tumorBam = tumorBam,
+           SM = tumor_sampleId.SM,
+           index = 1, 
+           genomeFa = genomeFa,
+           genomeFai = genomeFai, 
+           snpPosFile = snpPosFile,
+           snpLociFile = snpLociFile,
+           snpGcCorrectionsFile = snpGcCorrectionsFile,
+           seqType = seqType,
+           assembly = assembly,
+           species = species,
+           gender = gender,
+           outputDir = globalOutputDir
   }
 
   call ascat as ascat_finalise {
     input: process = "finalise",
-            controlBam = controlBam,
-            tumorBam = tumorBam,
-            index = 1, 
-            genomeFa = genomeFa,
-            genomeFai = genomeFai, 
-            snpPosFile = snpPosFile,
-            snpLociFile = snpLociFile,
-            snpGcCorrectionsFile = snpGcCorrectionsFile,
-            seqType = seqType,
-            assembly = assembly,
-            species = species,
-            gender = gender,
-            outputDir = globalOutputDir
+           controlBam = controlBam,
+           tumorBam = tumorBam,
+           SM = tumor_sampleId.SM,
+           index = 1, 
+           genomeFa = genomeFa,
+           genomeFai = genomeFai, 
+           snpPosFile = snpPosFile,
+           snpLociFile = snpLociFile,
+           snpGcCorrectionsFile = snpGcCorrectionsFile,
+           seqType = seqType,
+           assembly = assembly,
+           species = species,
+           gender = gender,
+           outputDir = globalOutputDir
   }
 
 
@@ -549,62 +611,68 @@ workflow sanger_cgp_somatic_vc {
   ##
   call pindel as pindel_input1 {
     input: process="input", 
-            pindelInputThreads = pindelInputThreads,
-            index = 1,
-            controlBam = controlBam,
-            tumorBam = tumorBam,
-            genomeFa = genomeFa,
-            genomeFai = genomeFai, 
-            simpleRepeatsFile = simpleRepeatsFile,
-            vcfFilterRulesFile = vcfFilterRulesFile,
-            vcfFilterSoftRulesFile = vcfFilterSoftRulesFile,
-            codingGeneFootprintsFile = codingGeneFootprintsFile,
-            unmatchedNormalPanelGff3 = unmatchedNormalPanelGff3,
-            badAnchorLociFile = badAnchorLociFile,
-            seqType = seqType,
-            assembly = assembly,
-            species = species,
-            outputDir = globalOutputDir
+           pindelInputThreads = pindelInputThreads,
+           index = 1,
+           controlBam = controlBam,
+           controlBamId = control_sampleId.SM,
+           tumorBam = tumorBam,
+           tumorBamId = tumor_sampleId.SM,
+           genomeFa = genomeFa,
+           genomeFai = genomeFai, 
+           simpleRepeatsFile = simpleRepeatsFile,
+           vcfFilterRulesFile = vcfFilterRulesFile,
+           vcfFilterSoftRulesFile = vcfFilterSoftRulesFile,
+           codingGeneFootprintsFile = codingGeneFootprintsFile,
+           unmatchedNormalPanelGff3 = unmatchedNormalPanelGff3,
+           badAnchorLociFile = badAnchorLociFile,
+           seqType = seqType,
+           assembly = assembly,
+           species = species,
+           outputDir = globalOutputDir
   }
 
   call pindel as pindel_input2 {
     input: process="input", 
-            pindelInputThreads = pindelInputThreads,
-            index = 2,
-            controlBam = controlBam,
-            tumorBam = tumorBam,
-            genomeFa = genomeFa,
-            genomeFai = genomeFai, 
-            simpleRepeatsFile = simpleRepeatsFile,
-            vcfFilterRulesFile = vcfFilterRulesFile,
-            vcfFilterSoftRulesFile = vcfFilterSoftRulesFile,
-            codingGeneFootprintsFile = codingGeneFootprintsFile,
-            unmatchedNormalPanelGff3 = unmatchedNormalPanelGff3,
-            badAnchorLociFile = badAnchorLociFile,
-            seqType = seqType,
-            assembly = assembly,
-            species = species,
-            outputDir = globalOutputDir
+           pindelInputThreads = pindelInputThreads,
+           index = 2,
+           controlBam = controlBam,
+           controlBamId = control_sampleId.SM,
+           tumorBam = tumorBam,
+           tumorBamId = tumor_sampleId.SM,
+           genomeFa = genomeFa,
+           genomeFai = genomeFai, 
+           simpleRepeatsFile = simpleRepeatsFile,
+           vcfFilterRulesFile = vcfFilterRulesFile,
+           vcfFilterSoftRulesFile = vcfFilterSoftRulesFile,
+           codingGeneFootprintsFile = codingGeneFootprintsFile,
+           unmatchedNormalPanelGff3 = unmatchedNormalPanelGff3,
+           badAnchorLociFile = badAnchorLociFile,
+           seqType = seqType,
+           assembly = assembly,
+           species = species,
+           outputDir = globalOutputDir
   }
 
   call pindel {
     input: process="pindel",
-            pindelInputThreads = pindelNormalisedThreads,
-            pindelNormalisedThreads = pindelNormalisedThreads,
-            controlBam = controlBam,
-            tumorBam = tumorBam,
-            genomeFa = genomeFa,
-            genomeFai = genomeFai, 
-            simpleRepeatsFile = simpleRepeatsFile,
-            vcfFilterRulesFile = vcfFilterRulesFile,
-            vcfFilterSoftRulesFile = vcfFilterSoftRulesFile,
-            codingGeneFootprintsFile = codingGeneFootprintsFile,
-            unmatchedNormalPanelGff3 = unmatchedNormalPanelGff3,
-            badAnchorLociFile = badAnchorLociFile,
-            seqType = seqType,
-            assembly = assembly,
-            species = species,
-            outputDir = globalOutputDir
+           pindelInputThreads = pindelNormalisedThreads,
+           pindelNormalisedThreads = pindelNormalisedThreads,
+           controlBam = controlBam,
+           controlBamId = control_sampleId.SM,
+           tumorBam = tumorBam,
+           tumorBamId = tumor_sampleId.SM,
+           genomeFa = genomeFa,
+           genomeFai = genomeFai, 
+           simpleRepeatsFile = simpleRepeatsFile,
+           vcfFilterRulesFile = vcfFilterRulesFile,
+           vcfFilterSoftRulesFile = vcfFilterSoftRulesFile,
+           codingGeneFootprintsFile = codingGeneFootprintsFile,
+           unmatchedNormalPanelGff3 = unmatchedNormalPanelGff3,
+           badAnchorLociFile = badAnchorLociFile,
+           seqType = seqType,
+           assembly = assembly,
+           species = species,
+           outputDir = globalOutputDir
   }
 
   # number of refs to process
@@ -612,60 +680,66 @@ workflow sanger_cgp_somatic_vc {
   scatter(i in pindelScatterIndices) {
     call pindel as pindel_pin2vcf {
       input: process = "pin2vcf", 
-              index = i,
-              controlBam = controlBam,
-              tumorBam = tumorBam,
-              genomeFa = genomeFa,
-              genomeFai = genomeFai, 
-              simpleRepeatsFile = simpleRepeatsFile,
-              vcfFilterRulesFile = vcfFilterRulesFile,
-              vcfFilterSoftRulesFile = vcfFilterSoftRulesFile,
-              codingGeneFootprintsFile = codingGeneFootprintsFile,
-              unmatchedNormalPanelGff3 = unmatchedNormalPanelGff3,
-              badAnchorLociFile = badAnchorLociFile,
-              seqType = seqType,
-              assembly = assembly,
-              species = species,
-              outputDir = globalOutputDir
+             index = i,
+             controlBam = controlBam,
+             controlBamId = control_sampleId.SM,
+             tumorBam = tumorBam,
+             tumorBamId = tumor_sampleId.SM,
+             genomeFa = genomeFa,
+             genomeFai = genomeFai, 
+             simpleRepeatsFile = simpleRepeatsFile,
+             vcfFilterRulesFile = vcfFilterRulesFile,
+             vcfFilterSoftRulesFile = vcfFilterSoftRulesFile,
+             codingGeneFootprintsFile = codingGeneFootprintsFile,
+             unmatchedNormalPanelGff3 = unmatchedNormalPanelGff3,
+             badAnchorLociFile = badAnchorLociFile,
+             seqType = seqType,
+             assembly = assembly,
+             species = species,
+             outputDir = globalOutputDir
     }
   }
 
   call pindel as pindel_merge {
     input: process = "merge",
-            index = 1, 
-            controlBam = controlBam,
-            tumorBam = tumorBam,
-            genomeFa = genomeFa,
-            genomeFai = genomeFai, 
-            simpleRepeatsFile = simpleRepeatsFile,
-            vcfFilterRulesFile = vcfFilterRulesFile,
-            vcfFilterSoftRulesFile = vcfFilterSoftRulesFile,
-            codingGeneFootprintsFile = codingGeneFootprintsFile,
-            unmatchedNormalPanelGff3 = unmatchedNormalPanelGff3,
-            badAnchorLociFile = badAnchorLociFile,
-            seqType = seqType,
-            assembly = assembly,
-            species = species,
-            outputDir = globalOutputDir
+           index = 1, 
+           controlBam = controlBam,
+           controlBamId = control_sampleId.SM,
+           tumorBam = tumorBam,
+           tumorBamId = tumor_sampleId.SM,
+           genomeFa = genomeFa,
+           genomeFai = genomeFai, 
+           simpleRepeatsFile = simpleRepeatsFile,
+           vcfFilterRulesFile = vcfFilterRulesFile,
+           vcfFilterSoftRulesFile = vcfFilterSoftRulesFile,
+           codingGeneFootprintsFile = codingGeneFootprintsFile,
+           unmatchedNormalPanelGff3 = unmatchedNormalPanelGff3,
+           badAnchorLociFile = badAnchorLociFile,
+           seqType = seqType,
+           assembly = assembly,
+           species = species,
+           outputDir = globalOutputDir
   }
 
   call pindel as pindel_flag {
     input: process = "flag", 
-            index = 1,
-            controlBam = controlBam,
-            tumorBam = tumorBam,
-            genomeFa = genomeFa,
-            genomeFai = genomeFai, 
-            simpleRepeatsFile = simpleRepeatsFile,
-            vcfFilterRulesFile = vcfFilterRulesFile,
-            vcfFilterSoftRulesFile = vcfFilterSoftRulesFile,
-            codingGeneFootprintsFile = codingGeneFootprintsFile,
-            unmatchedNormalPanelGff3 = unmatchedNormalPanelGff3,
-            badAnchorLociFile = badAnchorLociFile,
-            seqType = seqType,
-            assembly = assembly,
-            species = species,
-            outputDir = globalOutputDir
+           index = 1,
+           controlBam = controlBam,
+           controlBamId = control_sampleId.SM,
+           tumorBam = tumorBam,
+           tumorBamId = tumor_sampleId.SM,
+           genomeFa = genomeFa,
+           genomeFai = genomeFai, 
+           simpleRepeatsFile = simpleRepeatsFile,
+           vcfFilterRulesFile = vcfFilterRulesFile,
+           vcfFilterSoftRulesFile = vcfFilterSoftRulesFile,
+           codingGeneFootprintsFile = codingGeneFootprintsFile,
+           unmatchedNormalPanelGff3 = unmatchedNormalPanelGff3,
+           badAnchorLociFile = badAnchorLociFile,
+           seqType = seqType,
+           assembly = assembly,
+           species = species,
+           outputDir = globalOutputDir
   }
 
   ##
@@ -929,13 +1003,36 @@ workflow sanger_cgp_somatic_vc {
   # TODO - caveCnPrep
   call caveCnPrep as control_caveCnPrep {
     input: type = "control",
-           CnPath = ,
+           cnPath = ascat_finalise.copynumberCavemanCsv,
            outputDir = globalOutputDir
   }
 
   call caveCnPrep as tumor_caveCnPrep {
     input: type = "tumor",
-           CnPath = ,
+           cnPath = ascat_finalise.copynumberCavemanCsv,
+           outputDir = globalOutputDir
+  }
+
+  call caveman as caveman_setup {
+    input: process = "setup", 
+           index = 1,
+           controlBam = controlBam,
+           tumorBam = tumorBam,
+           controlCopyNumberFile = control_caveCnPrep.caveCnPrepOut,
+           tumorCopyNumberFile = tumor_caveCnPrep.caveCnPrepOut,
+           genomeFa = genomeFa,
+           genomeFai = genomeFai,
+           ascatContamFile= ascat_finalise.sampleStatistics,
+           ignoredRegionsFile = ignoredRegionsFile,
+           pindelGermlineMutsFile = pindelGermlineMutsFile,
+           flagBedFilesDir = flagBedFilesDir,
+           flagBedFiles = flagBedFiles,
+           unmatchedNormalFilesDir = unmatchedNormalFilesDir,
+           unmatchedNormalFiles = unmatchedNormalFiles,
+           seqType = seqType,
+           assembly = assembly,
+           species = species,
+           seqProtocol = seqProtocol,
            outputDir = globalOutputDir
   }
 
@@ -945,9 +1042,11 @@ workflow sanger_cgp_somatic_vc {
              index = i,
              controlBam = controlBam,
              tumorBam = tumorBam,
+             controlCopyNumberFile = control_caveCnPrep.caveCnPrepOut,
+             tumorCopyNumberFile = tumor_caveCnPrep.caveCnPrepOut,
              genomeFa = genomeFa,
              genomeFai = genomeFai,
-             ascatContamFile = ascatContamFile,
+             ascatContamFile= ascat_finalise.sampleStatistics,
              ignoredRegionsFile = ignoredRegionsFile,
              pindelGermlineMutsFile = pindelGermlineMutsFile,
              flagBedFilesDir = flagBedFilesDir,
@@ -967,9 +1066,11 @@ workflow sanger_cgp_somatic_vc {
            index = 1,
            controlBam = controlBam,
            tumorBam = tumorBam,
+           controlCopyNumberFile = control_caveCnPrep.caveCnPrepOut,
+           tumorCopyNumberFile = tumor_caveCnPrep.caveCnPrepOut,
            genomeFa = genomeFa,
            genomeFai = genomeFai,
-           ascatContamFile = ascatContamFile,
+           ascatContamFile= ascat_finalise.sampleStatistics,
            ignoredRegionsFile = ignoredRegionsFile,
            pindelGermlineMutsFile = pindelGermlineMutsFile,
            flagBedFilesDir = flagBedFilesDir,
@@ -987,9 +1088,11 @@ workflow sanger_cgp_somatic_vc {
     input: process = "mstep", 
            controlBam = controlBam,
            tumorBam = tumorBam,
+           controlCopyNumberFile = control_caveCnPrep.caveCnPrepOut,
+           tumorCopyNumberFile = tumor_caveCnPrep.caveCnPrepOut,
            genomeFa = genomeFa,
            genomeFai = genomeFai,
-           ascatContamFile = ascatContamFile,
+           ascatContamFile= ascat_finalise.sampleStatistics,
            ignoredRegionsFile = ignoredRegionsFile,
            pindelGermlineMutsFile = pindelGermlineMutsFile,
            flagBedFilesDir = flagBedFilesDir,
@@ -1000,7 +1103,7 @@ workflow sanger_cgp_somatic_vc {
            assembly = assembly,
            species = species,
            seqProtocol = seqProtocol,
-           outputDir = globalOutputDir
+           outputDir = globalOutputDir,
            threads = cavemanMstepThreads
   }
 
@@ -1009,9 +1112,11 @@ workflow sanger_cgp_somatic_vc {
            index = 1,
            controlBam = controlBam,
            tumorBam = tumorBam,
+           controlCopyNumberFile = control_caveCnPrep.caveCnPrepOut,
+           tumorCopyNumberFile = tumor_caveCnPrep.caveCnPrepOut,
            genomeFa = genomeFa,
            genomeFai = genomeFai,
-           ascatContamFile = ascatContamFile,
+           ascatContamFile= ascat_finalise.sampleStatistics,
            ignoredRegionsFile = ignoredRegionsFile,
            pindelGermlineMutsFile = pindelGermlineMutsFile,
            flagBedFilesDir = flagBedFilesDir,
@@ -1029,9 +1134,11 @@ workflow sanger_cgp_somatic_vc {
     input: process = "estep",
            controlBam = controlBam,
            tumorBam = tumorBam,
+           controlCopyNumberFile = control_caveCnPrep.caveCnPrepOut,
+           tumorCopyNumberFile = tumor_caveCnPrep.caveCnPrepOut,
            genomeFa = genomeFa,
            genomeFai = genomeFai,
-           ascatContamFile = ascatContamFile,
+           ascatContamFile= ascat_finalise.sampleStatistics,
            ignoredRegionsFile = ignoredRegionsFile,
            pindelGermlineMutsFile = pindelGermlineMutsFile,
            flagBedFilesDir = flagBedFilesDir,
@@ -1042,7 +1149,7 @@ workflow sanger_cgp_somatic_vc {
            assembly = assembly,
            species = species,
            seqProtocol = seqProtocol,
-           outputDir = globalOutputDir
+           outputDir = globalOutputDir,
            threads = cavemanEstepThreads
   }
 
@@ -1051,9 +1158,11 @@ workflow sanger_cgp_somatic_vc {
            index = 1,
            controlBam = controlBam,
            tumorBam = tumorBam,
+           controlCopyNumberFile = control_caveCnPrep.caveCnPrepOut,
+           tumorCopyNumberFile = tumor_caveCnPrep.caveCnPrepOut,
            genomeFa = genomeFa,
            genomeFai = genomeFai,
-           ascatContamFile = ascatContamFile,
+           ascatContamFile= ascat_finalise.sampleStatistics,
            ignoredRegionsFile = ignoredRegionsFile,
            pindelGermlineMutsFile = pindelGermlineMutsFile,
            flagBedFilesDir = flagBedFilesDir,
@@ -1072,9 +1181,11 @@ workflow sanger_cgp_somatic_vc {
            index = 1,
            controlBam = controlBam,
            tumorBam = tumorBam,
+           controlCopyNumberFile = control_caveCnPrep.caveCnPrepOut,
+           tumorCopyNumberFile = tumor_caveCnPrep.caveCnPrepOut,
            genomeFa = genomeFa,
            genomeFai = genomeFai,
-           ascatContamFile = ascatContamFile,
+           ascatContamFile= ascat_finalise.sampleStatistics,
            ignoredRegionsFile = ignoredRegionsFile,
            pindelGermlineMutsFile = pindelGermlineMutsFile,
            flagBedFilesDir = flagBedFilesDir,
@@ -1093,10 +1204,12 @@ workflow sanger_cgp_somatic_vc {
            index = 1,
            controlBam = controlBam,
            tumorBam = tumorBam,
+           controlCopyNumberFile = control_caveCnPrep.caveCnPrepOut,
+           tumorCopyNumberFile = tumor_caveCnPrep.caveCnPrepOut,
            genomeFa = genomeFa,
            genomeFai = genomeFai,
-           pindelGermlineMutsFile = pindelGermlineMutsFile,
-           ascatContamFile = ascatContamFile,
+           pindelGermlineMutsFile = pindel_flag.germlineBed,
+           ascatContamFile= ascat_finalise.sampleStatistics,
            ignoredRegionsFile = ignoredRegionsFile,
            pindelGermlineMutsFile = pindelGermlineMutsFile,
            flagBedFilesDir = flagBedFilesDir,
