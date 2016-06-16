@@ -1,3 +1,6 @@
-tmp*
-test*
+*tmp*
+*test*
 *.tar.gz
+tool-metadata/
+ref-files/
+cromwell-*

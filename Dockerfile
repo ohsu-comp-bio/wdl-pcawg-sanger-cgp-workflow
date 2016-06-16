@@ -328,7 +328,7 @@ RUN echo "options(bitmapType='cairo')" > /home/.Rprofile
 COPY ./workflow_scripts/* $OPT/bin/
 
 ### END of CGP INSTALL ###
-
 WORKDIR /output
+RUN mkdir /output/bbCounts /output/contamination /output/genotype /output/ascat /output/pindel /output/brass /output/caveman
 VOLUME /output
 CMD /bin/bash

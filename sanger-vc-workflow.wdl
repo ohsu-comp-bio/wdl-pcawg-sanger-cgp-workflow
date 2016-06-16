@@ -1,8 +1,24 @@
+task get_basename {
+  File f
+
+  command {
+    basename ${f} | cut -f 1 -d '.'
+  }
+
+  output {
+    String base = read_string(stdout())
+  }
+
+  runtime {
+    docker: "sanger-somatic-vc-workflow"
+  }
+}
+
 task getSampleId {
   File inBam
 
   command {
-     samtools view -H ${inBam} | grep "SM:" | sed 's/.*SM:\(.*\)\t.*/\1/g'
+     samtools view -H ${inBam} | grep -m 1 "SM:" | sed 's/.*SM:\(.*\).*/\1/g'
   }
 
   output {
@@ -16,8 +32,10 @@ task getSampleId {
 
 task compareGenotype {
   File controlBam
+  File controlBamBai
   String controlBamId
   File tumorBam
+  File tumorBamBai
   String tumorBamId
   String outputDir
 
@@ -45,6 +63,7 @@ task compareGenotype {
 
 task analyzeContamination {
   File bamFile
+  File bamIndexFile
   String SM
   File? ascatSegmentFile
   Int contamDownsampOneIn = 25
@@ -57,14 +76,14 @@ task analyzeContamination {
       -o ${outputDir + "/contamination"} \
       -b ${bamFile} \
       -d ${contamDownsampOneIn} \
-      -j ${outputDir + "/contamination/" + SM + "_" + process + "_summary.json"}
+      -j ${outputDir + "/contamination/" + SM + "_summary.json"}
       -a ${ascatSegmentFile}
     else
       verifyBamHomChk.pl \
       -o ${outputDir + "/contamination"} \
       -b ${bamFile} \
       -d ${contamDownsampOneIn} \
-      -j ${outputDir + "/contamination/" + SM + "_" + process + "_summary.json"}
+      -j ${outputDir + "/contamination/" + SM + "_summary.json"}
     fi
   >>>
 
@@ -85,15 +104,17 @@ task analyzeContamination {
 
 task bam_stats {
   File bamFile
+  File bamIndexFile
+  String bamFileName
   String outputDir
 
   command {
     bam_stats -i ${bamFile} \
-              -o ${outputDir + "/" + bamFile + ".bas"}
+              -o ${outputDir + "/" + bamFileName + ".bam.bas"}
   }
 
   output {
-    File basFile = "${outputDir}/${bamFile}.bas"
+    File basFile = "${outputDir}/${bamFileName}.bam.bas"
   }
 
   runtime {
@@ -103,19 +124,21 @@ task bam_stats {
 
 task bbAlleleCount {
   File bamFile
+  File bamIndexFile
   File bbRefLoci
+  String bbRefName
   String SM
   String outputDir
 
   command {
-    execute_with_sample ${bamFile} alleleCounter \
-    -l ${bbRefLoci} \ 
-    -o ${outputDir + "/bbCounts/" + SM + "_" + bbRefLoci + ".tsv"} \
-    -b ${bamFile};
+    alleleCounter \
+    -l ${bbRefLoci} \
+    -o ${outputDir + "/bbCounts/" + SM + "_" + bbRefName + ".tsv"} \
+    -b ${bamFile}
   }
 
   output {
-    File alleleCounts = "${outputDir}/${SM}.${bbRefLoci}.tsv"
+    File alleleCounts = "${outputDir}/bbCounts/${SM}.${bbRefName}.tsv"
   }
 
   runtime {
@@ -126,7 +149,9 @@ task bbAlleleCount {
 # How do we pass a directory of files in WDL...?
 task qc_metrics {
   File controlBam
+  File controlBamBai
   File tumorBam
+  File tumorBamBai
   String outputDir
 
   command {
@@ -144,7 +169,9 @@ task qc_metrics {
 
 task ascat {
   File tumorBam
+  File tumorBamBai
   File controlBam
+  File controlBamBai
   File genomeFa
   File genomeFai
   File snpPosFile
@@ -201,8 +228,10 @@ task ascat {
 
 task pindel {
   File tumorBam
+  File tumorBamBai
   String tumorBamId
   File controlBam
+  File controlBamBai
   String controlBamId
   File genomeFa
   File genomeFai
@@ -265,8 +294,10 @@ task pindel {
 
 task brass {
   File tumorBam
+  File tumorBamBai
   String tumorBamId
   File controlBam
+  File controlBamBai
   String controlBamId
   File genomeFa
   File genomeFai
@@ -362,8 +393,10 @@ task caveCnPrep {
 
 task caveman {
   File tumorBam
+  File tumorBamBai
   String tumorBamId
   File controlBam
+  File controlBamBai
   String controlBamId
   File genomeFa
   File genomeFai
@@ -427,7 +460,9 @@ task caveman {
 
 workflow sanger_cgp_somatic_vc {
   File controlBam
+  File controlBamBai
   File tumorBam
+  File tumorBamBai
   File genomeFa
   File genomeFai
   String seqType = "WGS"
@@ -435,7 +470,7 @@ workflow sanger_cgp_somatic_vc {
   String assembly = "GRCh37"
   String species = "human"
   String gender
-  String globalOutputDir = "/output/"
+  String globalOutputDir = "/output"
 
   # bbAlleleCount
   Array[File] bbRefLociFiles
@@ -468,14 +503,13 @@ workflow sanger_cgp_somatic_vc {
   Int brassThreads
 
   # CAVEMAN
-  File ascatContamFile
-  File ignoredRegionsFile
+  File cavemanIgnoredRegionsFile
   File? pindelGermlineMutsFile
   String flagBedFilesDir
   Array[File] flagBedFiles
   String unmatchedNormalFilesDir
   Array[File] unmatchedNormalFiles
-  Array[Int] cavemandSplitIndices = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86]
+  Array[Int] cavemanSplitIndices = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86]
   Int cavemanMstepThreads
   Int cavemanEstepThreads
 
@@ -490,10 +524,20 @@ workflow sanger_cgp_somatic_vc {
     input: inBam = controlBam
   }
 
+  call get_basename as tumor_basename {
+    input: f = tumorBam
+  }
+
+  call get_basename as control_basename {
+    input: f = controlBam
+  }
+
   call compareGenotype {
-    input: controlBam = controlBam, 
+    input: controlBam = controlBam,
+           controlBamBai = controlBamBai, 
            controlBamId = control_sampleId.SM,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            tumorBamId = tumor_sampleId.SM,
            outputDir = globalOutputDir
   }
@@ -501,6 +545,7 @@ workflow sanger_cgp_somatic_vc {
   call analyzeContamination as control_contam {
     input: process = "control",
            bamFile = controlBam,
+           bamIndexFile = controlBamBai,
            SM = control_sampleId.SM,
            outputDir = globalOutputDir
   }
@@ -508,6 +553,7 @@ workflow sanger_cgp_somatic_vc {
   call analyzeContamination as tumor_contam {
     input: process = "tumor",
            bamFile = tumorBam,
+           bamIndexFile = tumorBamBai,
            SM = tumor_sampleId.SM,
            ascatSegmentFile = ascat_finalise.copynumberCavemanCsv,
            outputDir = globalOutputDir
@@ -515,33 +561,47 @@ workflow sanger_cgp_somatic_vc {
   
   call bam_stats as control_bam_stats {
     input: bamFile = controlBam, 
+           bamIndexFile = controlBamBai,
+           bamFileName = control_basename.base,
            outputDir = globalOutputDir
   }
 
   call bam_stats as tumor_bam_stats {
     input: bamFile = tumorBam, 
+           bamIndexFile = tumorBamBai,
+           bamFileName = tumor_basename.base,
            outputDir = globalOutputDir
   }
   
   scatter(chrLoci in bbRefLociFiles) {
+    call get_basename {
+      input: f = chrLoci
+    }
+
     call bbAlleleCount as control_bbAlleleCount {
       input: bamFile = controlBam, 
+             bamIndexFile = controlBamBai,
              SM = control_sampleId.SM,
              bbRefLoci = chrLoci,
+             bbRefName = get_basename.base,
              outputDir = globalOutputDir
     }
   
     call bbAlleleCount as tumor_bbAlleleCount {
-      input: bamFile = tumorBam, 
+      input: bamFile = tumorBam,
+             bamIndexFile = tumorBamBai,
              SM = tumor_sampleId.SM,
              bbRefLoci = chrLoci,
+             bbRefName = get_basename.base,
              outputDir = globalOutputDir
     }
   }
 
   # call qc_metrics {
   #   input: controlBam = controlBam,
+  #          controlBamBai = controlBamBai,
   #          tumorBam = tumorBam,
+  #          tumorBamBai = tumorBamBai,
   #          outputDir = globalOutputDir
   # }
 
@@ -551,7 +611,9 @@ workflow sanger_cgp_somatic_vc {
   call ascat as ascat_allele_count {
     input: process = "allele_count",
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            SM = tumor_sampleId.SM,
            index = 1, 
            genomeFa = genomeFa,
@@ -569,7 +631,9 @@ workflow sanger_cgp_somatic_vc {
   call ascat {
     input: process = "ascat",
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            SM = tumor_sampleId.SM,
            index = 1, 
            genomeFa = genomeFa,
@@ -587,7 +651,9 @@ workflow sanger_cgp_somatic_vc {
   call ascat as ascat_finalise {
     input: process = "finalise",
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            SM = tumor_sampleId.SM,
            index = 1, 
            genomeFa = genomeFa,
@@ -611,8 +677,10 @@ workflow sanger_cgp_somatic_vc {
            pindelInputThreads = pindelInputThreads,
            index = 1,
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            controlBamId = control_sampleId.SM,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            tumorBamId = tumor_sampleId.SM,
            genomeFa = genomeFa,
            genomeFai = genomeFai, 
@@ -633,8 +701,10 @@ workflow sanger_cgp_somatic_vc {
            pindelInputThreads = pindelInputThreads,
            index = 2,
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            controlBamId = control_sampleId.SM,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            tumorBamId = tumor_sampleId.SM,
            genomeFa = genomeFa,
            genomeFai = genomeFai, 
@@ -655,8 +725,10 @@ workflow sanger_cgp_somatic_vc {
            pindelInputThreads = pindelNormalisedThreads,
            pindelNormalisedThreads = pindelNormalisedThreads,
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            controlBamId = control_sampleId.SM,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            tumorBamId = tumor_sampleId.SM,
            genomeFa = genomeFa,
            genomeFai = genomeFai, 
@@ -679,8 +751,10 @@ workflow sanger_cgp_somatic_vc {
       input: process = "pin2vcf", 
              index = i,
              controlBam = controlBam,
+             controlBamBai = controlBamBai,
              controlBamId = control_sampleId.SM,
              tumorBam = tumorBam,
+             tumorBamBai = tumorBamBai,
              tumorBamId = tumor_sampleId.SM,
              genomeFa = genomeFa,
              genomeFai = genomeFai, 
@@ -701,8 +775,10 @@ workflow sanger_cgp_somatic_vc {
     input: process = "merge",
            index = 1, 
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            controlBamId = control_sampleId.SM,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            tumorBamId = tumor_sampleId.SM,
            genomeFa = genomeFa,
            genomeFai = genomeFai, 
@@ -722,8 +798,10 @@ workflow sanger_cgp_somatic_vc {
     input: process = "flag", 
            index = 1,
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            controlBamId = control_sampleId.SM,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            tumorBamId = tumor_sampleId.SM,
            genomeFa = genomeFa,
            genomeFai = genomeFai, 
@@ -746,8 +824,10 @@ workflow sanger_cgp_somatic_vc {
     input: process = "input",
            index = 1,
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            controlBamId = control_sampleId.SM,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            tumorBamId = tumor_sampleId.SM,
            genomeFa = genomeFa,
            genomeFai = genomeFai, 
@@ -769,8 +849,10 @@ workflow sanger_cgp_somatic_vc {
     input: process = "input", 
            index = 2,
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            controlBamId = control_sampleId.SM,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            tumorBamId = tumor_sampleId.SM,
            genomeFa = genomeFa,
            genomeFai = genomeFai, 
@@ -791,8 +873,10 @@ workflow sanger_cgp_somatic_vc {
   call brass as brass_cover {
     input: process = "cover", 
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            controlBamId = control_sampleId.SM,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            tumorBamId = tumor_sampleId.SM,
            genomeFa = genomeFa,
            genomeFai = genomeFai, 
@@ -813,8 +897,10 @@ workflow sanger_cgp_somatic_vc {
   call brass as brass_merge {
     input: process = "merge", 
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            controlBamId = control_sampleId.SM,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            tumorBamId = tumor_sampleId.SM,
            genomeFa = genomeFa,
            genomeFai = genomeFai, 
@@ -835,8 +921,10 @@ workflow sanger_cgp_somatic_vc {
   call brass as brass_group {
     input: process = "group", 
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            controlBamId = control_sampleId.SM,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            tumorBamId = tumor_sampleId.SM,
            genomeFa = genomeFa,
            genomeFai = genomeFai, 
@@ -857,8 +945,10 @@ workflow sanger_cgp_somatic_vc {
   call brass as brass_isize {
     input: process = "isize", 
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            controlBamId = control_sampleId.SM,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            tumorBamId = tumor_sampleId.SM,
            genomeFa = genomeFa,
            genomeFai = genomeFai, 
@@ -879,8 +969,10 @@ workflow sanger_cgp_somatic_vc {
   call brass as brass_normcn {
     input: process = "normcn", 
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            controlBamId = control_sampleId.SM,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            tumorBamId = tumor_sampleId.SM,
            genomeFa = genomeFa,
            genomeFai = genomeFai, 
@@ -903,8 +995,10 @@ workflow sanger_cgp_somatic_vc {
   call brass as brass_filter {
     input: process = "filter", 
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            controlBamId = control_sampleId.SM,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            tumorBamId = tumor_sampleId.SM,
            genomeFa = genomeFa,
            genomeFai = genomeFai, 
@@ -927,8 +1021,10 @@ workflow sanger_cgp_somatic_vc {
   call brass as brass_split {
     input: process = "split", 
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            controlBamId = control_sampleId.SM,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            tumorBamId = tumor_sampleId.SM,
            genomeFa = genomeFa,
            genomeFai = genomeFai, 
@@ -949,8 +1045,10 @@ workflow sanger_cgp_somatic_vc {
   call brass as brass_assemble {
     input: process = "assemble", 
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            controlBamId = control_sampleId.SM,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            tumorBamId = tumor_sampleId.SM,
            genomeFa = genomeFa,
            genomeFai = genomeFai, 
@@ -972,8 +1070,10 @@ workflow sanger_cgp_somatic_vc {
   call brass as brass_grass {
     input: process = "grass", 
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            controlBamId = control_sampleId.SM,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            tumorBamId = tumor_sampleId.SM,
            genomeFa = genomeFa,
            genomeFai = genomeFai, 
@@ -996,8 +1096,10 @@ workflow sanger_cgp_somatic_vc {
   call brass as brass_tabix {
     input: process = "tabix", 
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            controlBamId = control_sampleId.SM,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            tumorBamId = tumor_sampleId.SM,
            genomeFa = genomeFa,
            genomeFai = genomeFai, 
@@ -1037,15 +1139,17 @@ workflow sanger_cgp_somatic_vc {
     input: process = "setup", 
            index = 1,
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            controlBamId = control_sampleId.SM,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            tumorBamId = tumor_sampleId.SM,
            controlCopyNumberFile = control_caveCnPrep.caveCnPrepOut,
            tumorCopyNumberFile = tumor_caveCnPrep.caveCnPrepOut,
            genomeFa = genomeFa,
            genomeFai = genomeFai,
-           ascatContamFile= ascat_finalise.sampleStatistics,
-           ignoredRegionsFile = ignoredRegionsFile,
+           ascatContamFile = ascat_finalise.sampleStatistics,
+           ignoredRegionsFile = cavemanIgnoredRegionsFile,
            pindelGermlineMutsFile = pindelGermlineMutsFile,
            flagBedFilesDir = flagBedFilesDir,
            flagBedFiles = flagBedFiles,
@@ -1058,20 +1162,22 @@ workflow sanger_cgp_somatic_vc {
            outputDir = globalOutputDir
   }
 
-  scatter(i in caveManSplitIndices) {
+  scatter(i in cavemanSplitIndices) {
     call caveman as caveman_split {
       input: process = "split", 
              index = i,
              controlBam = controlBam,
+             controlBamBai = controlBamBai,
              controlBamId = control_sampleId.SM,
              tumorBam = tumorBam,
+             tumorBamBai = tumorBamBai,
              tumorBamId = tumor_sampleId.SM,
              controlCopyNumberFile = control_caveCnPrep.caveCnPrepOut,
              tumorCopyNumberFile = tumor_caveCnPrep.caveCnPrepOut,
              genomeFa = genomeFa,
              genomeFai = genomeFai,
-             ascatContamFile= ascat_finalise.sampleStatistics,
-             ignoredRegionsFile = ignoredRegionsFile,
+             ascatContamFile = ascat_finalise.sampleStatistics,
+             ignoredRegionsFile = cavemanIgnoredRegionsFile,
              pindelGermlineMutsFile = pindelGermlineMutsFile,
              flagBedFilesDir = flagBedFilesDir,
              flagBedFiles = flagBedFiles,
@@ -1089,15 +1195,17 @@ workflow sanger_cgp_somatic_vc {
     input: process = "split_concat", 
            index = 1,
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            controlBamId = control_sampleId.SM,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            tumorBamId = tumor_sampleId.SM,
            controlCopyNumberFile = control_caveCnPrep.caveCnPrepOut,
            tumorCopyNumberFile = tumor_caveCnPrep.caveCnPrepOut,
            genomeFa = genomeFa,
            genomeFai = genomeFai,
-           ascatContamFile= ascat_finalise.sampleStatistics,
-           ignoredRegionsFile = ignoredRegionsFile,
+           ascatContamFile = ascat_finalise.sampleStatistics,
+           ignoredRegionsFile = cavemanIgnoredRegionsFile,
            pindelGermlineMutsFile = pindelGermlineMutsFile,
            flagBedFilesDir = flagBedFilesDir,
            flagBedFiles = flagBedFiles,
@@ -1113,15 +1221,17 @@ workflow sanger_cgp_somatic_vc {
   call caveman as caveman_mstep {
     input: process = "mstep", 
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            controlBamId = control_sampleId.SM,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            tumorBamId = tumor_sampleId.SM,
            controlCopyNumberFile = control_caveCnPrep.caveCnPrepOut,
            tumorCopyNumberFile = tumor_caveCnPrep.caveCnPrepOut,
            genomeFa = genomeFa,
            genomeFai = genomeFai,
-           ascatContamFile= ascat_finalise.sampleStatistics,
-           ignoredRegionsFile = ignoredRegionsFile,
+           ascatContamFile = ascat_finalise.sampleStatistics,
+           ignoredRegionsFile = cavemanIgnoredRegionsFile,
            pindelGermlineMutsFile = pindelGermlineMutsFile,
            flagBedFilesDir = flagBedFilesDir,
            flagBedFiles = flagBedFiles,
@@ -1139,15 +1249,17 @@ workflow sanger_cgp_somatic_vc {
     input: process = "merge", 
            index = 1,
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            controlBamId = control_sampleId.SM,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            tumorBamId = tumor_sampleId.SM,
            controlCopyNumberFile = control_caveCnPrep.caveCnPrepOut,
            tumorCopyNumberFile = tumor_caveCnPrep.caveCnPrepOut,
            genomeFa = genomeFa,
            genomeFai = genomeFai,
-           ascatContamFile= ascat_finalise.sampleStatistics,
-           ignoredRegionsFile = ignoredRegionsFile,
+           ascatContamFile = ascat_finalise.sampleStatistics,
+           ignoredRegionsFile = cavemanIgnoredRegionsFile,
            pindelGermlineMutsFile = pindelGermlineMutsFile,
            flagBedFilesDir = flagBedFilesDir,
            flagBedFiles = flagBedFiles,
@@ -1163,15 +1275,17 @@ workflow sanger_cgp_somatic_vc {
   call caveman as caveman_estep {
     input: process = "estep",
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            controlBamId = control_sampleId.SM,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            tumorBamId = tumor_sampleId.SM,
            controlCopyNumberFile = control_caveCnPrep.caveCnPrepOut,
            tumorCopyNumberFile = tumor_caveCnPrep.caveCnPrepOut,
            genomeFa = genomeFa,
            genomeFai = genomeFai,
-           ascatContamFile= ascat_finalise.sampleStatistics,
-           ignoredRegionsFile = ignoredRegionsFile,
+           ascatContamFile = ascat_finalise.sampleStatistics,
+           ignoredRegionsFile = cavemanIgnoredRegionsFile,
            pindelGermlineMutsFile = pindelGermlineMutsFile,
            flagBedFilesDir = flagBedFilesDir,
            flagBedFiles = flagBedFiles,
@@ -1189,15 +1303,17 @@ workflow sanger_cgp_somatic_vc {
     input: process = "merge_results", 
            index = 1,
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            controlBamId = control_sampleId.SM,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            tumorBamId = tumor_sampleId.SM,
            controlCopyNumberFile = control_caveCnPrep.caveCnPrepOut,
            tumorCopyNumberFile = tumor_caveCnPrep.caveCnPrepOut,
            genomeFa = genomeFa,
            genomeFai = genomeFai,
-           ascatContamFile= ascat_finalise.sampleStatistics,
-           ignoredRegionsFile = ignoredRegionsFile,
+           ascatContamFile = ascat_finalise.sampleStatistics,
+           ignoredRegionsFile = cavemanIgnoredRegionsFile,
            pindelGermlineMutsFile = pindelGermlineMutsFile,
            flagBedFilesDir = flagBedFilesDir,
            flagBedFiles = flagBedFiles,
@@ -1214,15 +1330,17 @@ workflow sanger_cgp_somatic_vc {
     input: process = "add_ids", 
            index = 1,
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            controlBamId = control_sampleId.SM,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            tumorBamId = tumor_sampleId.SM,
            controlCopyNumberFile = control_caveCnPrep.caveCnPrepOut,
            tumorCopyNumberFile = tumor_caveCnPrep.caveCnPrepOut,
            genomeFa = genomeFa,
            genomeFai = genomeFai,
-           ascatContamFile= ascat_finalise.sampleStatistics,
-           ignoredRegionsFile = ignoredRegionsFile,
+           ascatContamFile = ascat_finalise.sampleStatistics,
+           ignoredRegionsFile = cavemanIgnoredRegionsFile,
            pindelGermlineMutsFile = pindelGermlineMutsFile,
            flagBedFilesDir = flagBedFilesDir,
            flagBedFiles = flagBedFiles,
@@ -1239,16 +1357,18 @@ workflow sanger_cgp_somatic_vc {
     input: process = "flag", 
            index = 1,
            controlBam = controlBam,
+           controlBamBai = controlBamBai,
            controlBamId = control_sampleId.SM,
            tumorBam = tumorBam,
+           tumorBamBai = tumorBamBai,
            tumorBamId = tumor_sampleId.SM,
            controlCopyNumberFile = control_caveCnPrep.caveCnPrepOut,
            tumorCopyNumberFile = tumor_caveCnPrep.caveCnPrepOut,
            genomeFa = genomeFa,
            genomeFai = genomeFai,
            pindelGermlineMutsFile = pindel_flag.germlineBed,
-           ascatContamFile= ascat_finalise.sampleStatistics,
-           ignoredRegionsFile = ignoredRegionsFile,
+           ascatContamFile = ascat_finalise.sampleStatistics,
+           ignoredRegionsFile = cavemanIgnoredRegionsFile,
            pindelGermlineMutsFile = pindelGermlineMutsFile,
            flagBedFilesDir = flagBedFilesDir,
            flagBedFiles = flagBedFiles,
