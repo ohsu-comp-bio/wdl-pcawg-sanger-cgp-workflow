@@ -76,7 +76,7 @@ task analyzeContamination {
       -o ${outputDir + "/contamination"} \
       -b ${bamFile} \
       -d ${contamDownsampOneIn} \
-      -j ${outputDir + "/contamination/" + SM + "_summary.json"}
+      -j ${outputDir + "/contamination/" + SM + "_summary.json"} \
       -a ${ascatSegmentFile}
     else
       verifyBamHomChk.pl \
@@ -138,7 +138,7 @@ task bbAlleleCount {
   }
 
   output {
-    File alleleCounts = "${outputDir}/bbCounts/${SM}.${bbRefName}.tsv"
+    File alleleCounts = "${outputDir}/bbCounts/${SM}_${bbRefName}.tsv"
   }
 
   runtime {
@@ -187,7 +187,7 @@ task ascat {
   String outputDir
 
   command {
-    ascat.pl
+    ascat.pl \
     -p ${process} \
     -i ${index} \
     -r ${genomeFa} \
@@ -257,7 +257,7 @@ task pindel {
       -r ${genomeFa} \
       -e ${refExclude} \
       -st ${seqType} \
-      -as ${assembly}
+      -as ${assembly} \
       -sp ${species} \
       -s ${simpleRepeatsFile} \
       -f ${vcfFilterRulesFile} \
@@ -267,9 +267,9 @@ task pindel {
       -b ${badAnchorLociFile} \
       -o ${outputDir + "/pindel"} \
       -t ${tumorBam} \
-      -n ${controlBam}
-      ${"-i " + index}
-      ${"-c " + pindelInputThreads}
+      -n ${controlBam} \
+      ${"-i " + index} \
+      ${"-c " + pindelInputThreads} \
       ${"-l " + pindelNormalisedThreads}
   }
 

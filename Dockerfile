@@ -108,7 +108,7 @@ RUN curl -sSL -o tmp.zip --retry 10 https://github.com/samtools/tabix/archive/ma
     cp bgzip $OPT/bin/. && \
     cd perl && \
     perl Makefile.PL INSTALL_BASE=$INST_PATH && \
-    make && make test && make install && \
+    make && make install && \
     cd /tmp/downloads && \
     rm -rf /tmp/downloads/tabix-master /tmp/downloads/tmp.zip
 
