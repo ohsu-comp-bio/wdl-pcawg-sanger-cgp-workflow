@@ -11,10 +11,6 @@ ENV OPT /opt/wtsi-cgp
 ENV PATH $OPT/bin:$PATH
 ENV PERL5LIB $OPT/lib/perl5:$PERL5LIB
 
-RUN apt-get update \
-    && apt-get dist-upgrade -y --force-yes \
-    && apt-get install software-properties-common -y
-
 RUN apt-get -yqq update && \
     apt-get -yqq install libreadline6-dev \
                          build-essential \
@@ -36,9 +32,8 @@ RUN apt-get -yqq update && \
                          libcairo2-dev \
                          cpanminus \
                          libwww-perl \
-                         openjdk-7-jdk
-
-RUN apt-get clean && \
+                         openjdk-7-jdk &&\
+    apt-get clean && \ 
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 RUN mkdir -p /tmp/downloads $OPT/bin $OPT/etc $OPT/lib $OPT/share
@@ -323,7 +318,7 @@ RUN curl -sSL -o tmp.tar.gz --retry 10 https://github.com/wrpearson/fasta36/rele
     cp /tmp/downloads/fasta/bin/ssearch36 $OPT/bin/ && \
     rm -rf /tmp/downloads/fasta
 
-RUN echo "options(bitmapType='cairo')" > /home/.Rprofile
+RUN echo "options(bitmapType='cairo')" > /root/.Rprofile
 
 COPY ./workflow_scripts/* $OPT/bin/
 
