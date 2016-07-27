@@ -1,8 +1,8 @@
-# ICGC-TCGA-PanCancer BWA Workflow
+# ICGC-TCGA-PanCancer CGP Somatic Variant Calling Workflow
 
 ## Overview
 
-This is the workflow derived from Sanger's Cancer Genome Project core somatic 
+This is the workflow derived from Sanger's Cancer Genome Project (CGP) core somatic 
 calling pipeline for the TCGA/ICGC PanCancer Analysis of Whole Genomes (PCAWG) project.
 
 For more information about the project overall see the
