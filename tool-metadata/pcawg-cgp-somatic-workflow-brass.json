@@ -1,0 +1,29 @@
+{
+  "description": "BRASS - Sanger somatic variant calling SeqWare workflow from PCAWG project",
+  "family": "omics",
+  "approvalStatus": "review pending",
+  "dockerImage": "docker:5000/pcawg-cgp-somatic-workflow",
+  "dockerDataVolume": "/output/",
+  "dockerWorkingDir": "/output/",
+  "input": [],
+  "uploadedBy": "strucka",
+  "version": "latest",
+  "scheduler": {
+    "softRequirements": {
+      "memory": "8000",
+      "cpuCores": "24",
+      "diskSpace": "10000"
+    },
+    "hardRequirements": {
+      "memory": "8000",
+      "cpuCores": "24",
+      "diskSpace": "10000"
+    }
+  },
+  "fileSystem": "hdfs",
+  "owner": "strucka",
+  "output": [],
+  "schemaVersion": "1.0",
+  "id": "",
+  "name": "pcawg-cgp-somatic-workflow-brass"
+}
