@@ -56,7 +56,8 @@
 	"/mnt/wdl-pcawg-sanger-cgp-workflow/test-data/reference_files/brass/all_ncbi_bacteria.20150703.3.fa.2bit",
 	"/mnt/wdl-pcawg-sanger-cgp-workflow/test-data/reference_files/brass/all_ncbi_bacteria.20150703.4.fa.2bit"
     ],
-    "sanger_cgp_somatic_vc.microbeSeqsFilesPrefix": "/mnt/wdl-pcawg-sanger-cgp-workflow/test-data/reference_files/brass/all_ncbi_bacteria.20150703",
+    "sanger_cgp_somatic_vc.microbeSeqsDirectory": "/mnt/wdl-pcawg-sanger-cgp-workflow/test-data/reference_files/brass/",
+    "sanger_cgp_somatic_vc.microbeSeqsFilesPrefix": "all_ncbi_bacteria.20150703",
     "sanger_cgp_somatic_vc.normalPanelGroupsFile": "/mnt/wdl-pcawg-sanger-cgp-workflow/test-data/reference_files/brass/brass_np.groups.gz",
     "sanger_cgp_somatic_vc.normalPanelGroupsFileTbi": "/mnt/wdl-pcawg-sanger-cgp-workflow/test-data/reference_files/brass/brass_np.groups.gz.tbi",
     "sanger_cgp_somatic_vc.pindelInputThreads": 8,

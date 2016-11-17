@@ -312,7 +312,8 @@ task brass {
   File genomeCacheFile
   File genomeCacheFileTbi
   File virusSeqsFile
-  File microbeSeqsFilesPrefix
+  File microbeSeqsDirectory
+  String microbeSeqsFilesPrefix
   Array[File] microbeSeqsFiles
   File bedCoordFile
   File cnPath
@@ -349,7 +350,7 @@ task brass {
     -t ${tumorBam} \
     -n ${controlBam} \
     -vi ${virusSeqsFile} \
-    -mi ${microbeSeqsFilesPrefix} \
+    -mi ${microbeSeqsDirectory}/${microbeSeqsFilesPrefix} \
     -b ${bedCoordFile} \
     -a ${cnPath} \
     -ss ${cnStats} \
@@ -509,7 +510,8 @@ workflow sanger_cgp_somatic_vc {
   File genomeCacheFile
   File genomeCacheFileTbi
   File virusSeqsFile
-  File microbeSeqsFilesPrefix
+  File microbeSeqsDirectory
+  String microbeSeqsFilesPrefix
   Array[File] microbeSeqsFiles
   File bedCoordFile
   Int brassThreads
@@ -681,6 +683,7 @@ workflow sanger_cgp_somatic_vc {
            genomeCacheFile = genomeCacheFile,
            genomeCacheFileTbi = genomeCacheFileTbi,
            virusSeqsFile = virusSeqsFile,
+           microbeSeqsDirectory = microbeSeqsDirectory,
            microbeSeqsFilesPrefix = microbeSeqsFilesPrefix,
            microbeSeqsFiles = microbeSeqsFiles,
            bedCoordFile = bedCoordFile,
